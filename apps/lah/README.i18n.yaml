@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write apps/lah/README.md
+/lah-desktop-prealpha:
+  en: 99dd16be7a60b118
+  zh: 8a9c47bda6666adc
+/lah-desktop-prealpha/launch-and-build:
+  en: 37cdb52d94bc6959
+  zh: 4dbea1c240fd63e8
+/lah-desktop-prealpha/state-and-execution:
+  en: 3c1da88899ca9076
+  zh: 729c78e7a5a8248a
+/lah-desktop-prealpha/verification-and-limits:
+  en: b4fef8e93b4671b0
+  zh: e906a75fbaeb552b

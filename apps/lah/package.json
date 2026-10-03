@@ -1,0 +1,38 @@
+{
+  "name": "@lah/desktop",
+  "version": "0.0.1-prealpha",
+  "description": "Local Agent Harness: a local Windows desktop application",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/start.mjs",
+    "package:win": "node scripts/package-win.mjs",
+    "typecheck": "tsc -b ../../vendor/cordis ../../vendor/schemastery ../../vendor/timer && node scripts/typecheck.mjs",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-timer": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "eventsource-parser": "^3.0.6"
+  },
+  "devDependencies": {
+    "electron": "44.0.0",
+    "esbuild": "0.28.1",
+    "vitest": "^4.1.8",
+    "typescript": "^6.0.3",
+    "jsdom": "29.1.1",
+    "@types/jsdom": "28.0.3",
+    "@types/node": "^22.20.0",
+    "vite-tsconfig-paths": "^6.1.1"
+  }
+}

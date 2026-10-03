@@ -1,0 +1,25 @@
+# LAH desktop prealpha
+
+English | [中文](README.zh.md)
+
+LAH is an independent Electron application in this fork. It owns the window, isolated preload bridge, local settings and chat storage, OpenAI-compatible adapter, and four read-only workspace tools. The compiled profile uses the fork's Cordis services, AgentRegistry, AgentLoop, SessionStore, SystemPrompt, ToolRuntime, and LlmRuntime. It does not mount DeepSeek accounts, credential flows, billing, telemetry, shell tools, or cloud model providers.
+
+## Launch and build
+
+The LAH desktop carrier intentionally owns a new application entry point for this fork, rather than launching the upstream `dsh` product. [kernel.ts](kernel.ts) is its fixed local profile composition. The upstream CLI and agent-loop implementation remain available and unchanged. The user-requested independent desktop application is the reason for this additional carrier; runtime modules stay behind Cordis services and tools keep the standard execution pipeline.
+
+From the repository root, `pnpm build:lah` bundles the selected TypeScript source graph and copies the isolated renderer. `pnpm start:lah` starts the built application. `pnpm package:lah` copies the Windows Electron runtime and built application into `release/LAH-win32-x64`; `LAH.exe` needs the rest of that directory. This is a portable unsigned development build with no updater or installer. [Root instructions](../../README-LAH.md) cover installing build dependencies.
+
+The build substitutes the application's public identity in the bundled attribution helper. Package licenses and upstream notices ship with the application. The renderer has no Node access; all file and model operations use a fixed preload API with main-frame sender checks. Network connections happen in the main process and go only to the configured loopback server. Chromium hardware acceleration is disabled so the desktop leaves GPU resources available to the model server.
+
+## State and execution
+
+The application stores its own versioned JSON document at `%APPDATA%/LocalAgentHarness/lah-state.json`, atomically replacing it after settings changes and completed turns. It retains both display messages and exact upstream session events; reopening a chat seeds the real loop from those events. The store supports at most 100 chats and 64 MiB of serialized data. A corrupt or incompatible store is reported and left intact. There is no automatic migration or import of official Harness data.
+
+Only one send may be active. Stop cancels the owned agent and waits for idle; quitting drains the runtime before exit. The local profile limits a turn to 16 steps. Changing settings replaces the runtime after idle. A chat belonging to another workspace requires a new chat rather than silently reading a different folder. Model IDs and context sizes are explicit settings; `/models` discovery is optional and bounded. Model output and tool results are rendered as text.
+
+## Verification and limits
+
+`pnpm test:lah` exercises real bounded workspace readers, local SSE parsing, schema rejection, cancellation, and the built kernel's two-tool agent cycle with exact logged continuation. [The recorded transcript](tests/expected/read-only-transcript.json) pins a keyless session-driven result. A mock loopback HTTP server is the only substitute for a real model. Isolated UI tests exercise configuration, safe rendering and request state. The Electron `--lah-smoke` mode starts the actual isolated page in a hidden window, records its first state and a screenshot inside the explicitly selected `--lah-data` directory, then exits.
+
+The prealpha does not bundle a model, invoke training, measure model quality or connect SubLLM. Native tool-calling compatibility with each real server/model/template needs a live check. There is no automatic context compaction, accurate tokenizer, streaming token display, or full-context cost dashboard. The expandable tool panel reflects calls observed during the current window lifetime; exact persisted calls remain in the session log. File access is bounded in process and is not an OS-level sandbox against concurrently replaced filesystem entries. These limits are deliberate first-stage scope, not guarantees inferred from the upstream product.

@@ -1,0 +1,7 @@
+[
+  { "role": "user", "content": "Find the marker in README." },
+  { "role": "assistant", "content": "" },
+  { "tool": "read_file", "arguments": "{\"path\":\"README.md\"}" },
+  { "tool": "search_content", "arguments": "{\"query\":\"violet\"}" },
+  { "role": "assistant", "content": "Found violet-472 in README.md." }
+]

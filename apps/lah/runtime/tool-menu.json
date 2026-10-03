@@ -1,0 +1,103 @@
+{
+  "version": "lah-read-search-v1",
+  "source": "apps/lah/runtime/index.ts",
+  "tools": [
+    {
+      "option_id": "list_directory",
+      "name": "list_directory",
+      "description": "List direct entries in a workspace directory. Paths ending in / are directories. Symbolic links and junctions are omitted. No files are modified.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative or absolute directory. Default: ."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Positive result limit, at most the configured maxResults."
+          }
+        }
+      }
+    },
+    {
+      "option_id": "search_files",
+      "name": "search_files",
+      "description": "Find workspace files whose relative path contains query, ignoring case. Query is literal text, not a glob or regex. Searches are bounded and do not follow links.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Non-empty literal substring of the file path."
+          },
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative or absolute search directory. Default: ."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Positive result limit, at most the configured maxResults."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "option_id": "search_content",
+      "name": "search_content",
+      "description": "Find literal text in bounded UTF-8 workspace files and return path, 1-based line, and matching text. Default is case-insensitive. Binary or oversized files are counted as skipped. No regexes or shell commands are executed.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Non-empty literal text to find."
+          },
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative or absolute search directory. Default: ."
+          },
+          "case_sensitive": {
+            "type": "boolean",
+            "description": "Preserve letter case. Default: false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Positive match limit, at most the configured maxResults."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "option_id": "read_file",
+      "name": "read_file",
+      "description": "Read a bounded line window from a UTF-8 text file inside the selected workspace. No file is changed. Binary and oversized files are refused. Lines are numbered from 1.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative or absolute existing file path."
+          },
+          "start_line": {
+            "type": "integer",
+            "description": "1-based first line. Default: 1."
+          },
+          "max_lines": {
+            "type": "integer",
+            "description": "Positive line count, at most the configured maxResults."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  ]
+}
