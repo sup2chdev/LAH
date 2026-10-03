@@ -1,6 +1,8 @@
-# DeepSeek Harness
+# LAH — Local Agent Harness
 
 English | [中文](README.zh.md)
+
+This repository is the LAH fork. See [README-LAH.md](README-LAH.md) for the independent Windows prealpha, local model connection and build instructions. The sections below describe the upstream DeepSeek Harness.
 
 DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
 
