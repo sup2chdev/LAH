@@ -212,10 +212,44 @@ app.whenReady().then(async () => {
     await writeFile(join(app.getPath('userData'), 'desktop.png'), (await window.webContents.capturePage()).toPNG())
     if (process.argv.includes('--lah-design-review')) {
       window.webContents.setBackgroundThrottling(false)
-      await window.webContents.insertCSS('* { transition: none !important; }')
       window.showInactive()
       window.focus()
       window.webContents.focus()
+      const motion = []
+      window.webContents.debugger.attach('1.3')
+      try {
+        for (const preference of ['no-preference', 'reduce']) {
+          await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: preference }] })
+          const result = await window.webContents.executeJavaScript(`(async () => {
+            const inspect = async node => {
+              const style = getComputedStyle(node), name = style.animationName, duration = style.animationDuration;
+              const animations = node.getAnimations();
+              if (animations.some(animation => { const end = animation.effect.getComputedTiming().endTime; return !Number.isFinite(end) || end > 200; })) throw new Error('LAH surface motion must be finite and at most 200ms');
+              await Promise.all(animations.map(animation => animation.finished));
+              return { name, duration, count: animations.length, opacity: getComputedStyle(node).opacity };
+            };
+            document.getElementById('open-settings').click();
+            const dialog = await inspect(document.getElementById('settings-dialog'));
+            document.getElementById('settings-models-tab').click();
+            const page = await inspect(document.getElementById('settings-models'));
+            document.getElementById('close-settings').click();
+            document.getElementById('composer-add').click();
+            const menu = await inspect(document.getElementById('composer-menu'));
+            document.getElementById('composer-menu').hidePopover();
+            return { reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, dialog, page, menu };
+          })()`)
+          if (result.reduced !== (preference === 'reduce')) throw new Error('LAH motion preference was not applied')
+          for (const surface of [result.dialog, result.page, result.menu]) {
+            if (surface.opacity !== '1' || (result.reduced ? surface.name !== 'none' || surface.count !== 0 : surface.name === 'none' || surface.count === 0 || parseFloat(surface.duration) > .2)) throw new Error('LAH surface motion did not settle or respect reduced motion')
+          }
+          motion.push({ preference, ...result })
+        }
+      } finally {
+        try { await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] }) }
+        finally { window.webContents.debugger.detach() }
+      }
+      await writeFile(join(app.getPath('userData'), 'motion-review.json'), JSON.stringify(motion, null, 2))
+      await window.webContents.insertCSS('*, *::before, *::after { transition: none !important; animation: none !important; }')
       const waitForMenuDismissal = `new Promise(resolve => {
         const deadline = performance.now() + 1000;
         const inspect = () => {
