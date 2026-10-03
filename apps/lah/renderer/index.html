@@ -29,7 +29,8 @@
           <div class="session-heading"><h1 id="session-title"></h1></div>
           <button id="theme-toggle" class="icon-button has-tooltip" type="button" data-i18n-aria="lightTheme"><svg class="icon" aria-hidden="true"><use id="theme-icon" href="#icon-light"/></svg><span id="theme-tooltip" class="tooltip" role="tooltip" data-i18n="lightTheme"></span></button>
         </header>
-        <section class="conversation" id="conversation" data-i18n-aria="conversationAria">
+        <nav class="session-tabs" id="session-tabs" role="tablist" data-i18n-aria="sessionView" hidden><button id="chat-tab" class="session-tab" type="button" role="tab" aria-selected="true" aria-controls="conversation" data-i18n="chatTab"></button><button id="trajectory-tab" class="session-tab" type="button" role="tab" aria-selected="false" aria-controls="trajectory" tabindex="-1" data-i18n="trajectoryTab"></button></nav>
+        <section class="conversation" id="conversation" role="tabpanel" aria-labelledby="chat-tab">
           <div class="empty-state" id="empty-state">
             <div class="hero-identity"><svg class="hero-icon" aria-hidden="true"><use href="#lah-mark"/></svg><h2 data-i18n="emptyTitle"></h2><span class="hero-stage" data-i18n="stage"></span></div>
             <div class="setup-steps">
@@ -40,6 +41,11 @@
           <div id="messages" class="messages" aria-live="polite" aria-relevant="additions"></div>
           <div id="working-indicator" class="working-indicator" hidden><span class="working-dots" aria-hidden="true">···</span><span data-i18n="working"></span></div>
           <details class="tool-trace" id="tool-trace" hidden><summary><span data-i18n="toolTrace"></span><span id="tool-count" class="trace-count"></span></summary><div id="tool-events"></div></details>
+        </section>
+        <section id="trajectory" class="trajectory" role="tabpanel" aria-labelledby="trajectory-tab" hidden>
+          <div id="trajectory-toolbar" class="trajectory-toolbar"><div id="trajectory-stats" class="trajectory-stats"></div><input id="trajectory-search" type="search" maxlength="256" data-i18n-placeholder="traceSearch" data-i18n-aria="traceSearch"><select id="trajectory-filter" data-i18n-aria="traceFilter"><option value="all" data-i18n="traceAll"></option><option value="input" data-i18n="traceInput"></option><option value="model" data-i18n="traceModel"></option><option value="tool" data-i18n="traceTools"></option><option value="error" data-i18n="traceErrors"></option><option value="system" data-i18n="traceSystem"></option></select><button id="export-trajectory" class="button" type="button" data-i18n="traceExport" data-i18n-aria="traceExportHelp"></button></div>
+          <div class="trajectory-timeline"><div class="timeline-labels"><span data-i18n="traceInput"></span><span data-i18n="traceModel"></span><span data-i18n="traceTools"></span></div><div id="trajectory-lanes" class="timeline-lanes" data-i18n-aria="traceTimeline"></div></div>
+          <div class="trajectory-scroll" id="trajectory-scroll"><p id="trajectory-status" class="trajectory-status" role="status"></p><button id="trajectory-older" class="button trace-older" type="button" data-i18n="traceOlder" hidden></button><div id="trajectory-rows"></div></div>
         </section>
         <div class="composer-region">
           <div class="notice" id="notice" role="alert" hidden></div>
@@ -82,6 +88,7 @@
               <div class="appearance"><span class="field-label" data-i18n="appearance"></span><div class="theme-choices"><button class="theme-choice" type="button" data-theme-choice="light"><svg class="icon" aria-hidden="true"><use href="#icon-light"/></svg><span data-i18n="lightTheme"></span></button><button class="theme-choice" type="button" data-theme-choice="dark"><svg class="icon" aria-hidden="true"><use href="#icon-dark"/></svg><span data-i18n="darkTheme"></span></button></div></div>
               <div class="settings-row"><div><span class="field-label" data-i18n="workspace"></span><p id="settings-workspace-path" class="settings-detail"></p></div><button id="settings-workspace" class="button" type="button" data-i18n="pickFolder"></button></div>
               <p class="settings-limit" data-i18n="themeHelp"></p>
+              <div class="settings-row"><div><span class="field-label" data-i18n="diagnosticsTitle"></span><p id="diagnostics-path" class="settings-detail"></p><p id="diagnostics-error" class="form-error" hidden></p></div><button id="open-diagnostics" class="button" type="button" data-i18n="openDiagnostics"></button></div>
             </section>
             <section id="settings-models" class="settings-page" hidden>
               <h3 data-i18n="modelsSettings"></h3>

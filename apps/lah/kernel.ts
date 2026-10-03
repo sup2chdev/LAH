@@ -20,7 +20,7 @@ interface Settings {
 
 /** Events crossing the main-process presentation layer. */
 type KernelEvent = {
-  type: 'status' | 'tool' | 'error' | 'assistant'
+  type: 'status' | 'tool' | 'error' | 'assistant' | 'trajectory' | 'trajectory-snapshot'
   sessionId: string
   status?: string
   name?: string
@@ -30,6 +30,8 @@ type KernelEvent = {
   message?: string
   content?: string
   error?: string
+  event?: SessionEvent
+  events?: readonly SessionEvent[]
 }
 
 /** Boot the local profile, with no account, credentials, telemetry, or shell plugins. */
@@ -70,6 +72,7 @@ export async function createLahKernel(settings: Settings, onEvent: (event: Kerne
       onEvent({ type: 'error', sessionId: agent.id, message })
     })
     ctx.on('session/event', (session, event) => {
+      onEvent({ type: 'trajectory', sessionId: session.id, event })
       if (event.type === 'tool/call') {
         onEvent({ type: 'tool', sessionId: session.id, id: event.data.callId, name: event.data.name, args: event.data.arguments })
       } else if (event.type === 'tool/result') {
@@ -99,6 +102,8 @@ export async function createLahKernel(settings: Settings, onEvent: (event: Kerne
         handles.set(sessionId, handle)
       }
       failures.delete(sessionId)
+      // Seed boundaries are appended internally without publishing session/event.
+      onEvent({ type: 'trajectory-snapshot', sessionId, events: handle.agent.session.snapshotEvents() })
       const start = handle.agent.session.snapshotEvents().length
       handle.agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
       await handle.agent.whenIdle()

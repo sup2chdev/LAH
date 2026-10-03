@@ -2,8 +2,9 @@
 
 /** @typedef {{endpoint: string, model: string, contextWindow: number, maxTokens: number, workspace: string}} Settings */
 /** @typedef {{role: string, content: string}} Message */
-/** @typedef {{id: string, title: string, messages: Message[]}} Session */
-/** @typedef {{settings: Settings, sessions: Session[], tools: {name: string, description: string}[], version: string}} AppState */
+/** @typedef {{id: string, title: string, messages: Message[], eventCount?: number, failureCount?: number}} Session */
+/** @typedef {{settings: Settings, sessions: Session[], tools: {name: string, description: string}[], version: string, diagnostics?: {path: string, error?: string}}} AppState */
+/** @typedef {{key: string, seq?: number, time: number, type: string, kind: string, label: string, preview: string, turn: number, step: number, status: string, durationMs?: number}} TraceRow */
 
 /** @type {Readonly<Record<string, string>>} */
 const ru = Object.freeze({
@@ -89,6 +90,32 @@ const ru = Object.freeze({
   toolSearchFiles: 'Найти файлы по имени',
   toolSearchContent: 'Найти текст в файлах',
   toolReadFile: 'Прочитать файл',
+  sessionView: 'Содержимое сеанса',
+  chatTab: 'Чат',
+  trajectoryTab: 'Траектория',
+  traceSearch: 'Поиск по всем событиям',
+  traceFilter: 'Тип событий',
+  traceAll: 'Все события',
+  traceInput: 'Ввод',
+  traceModel: 'Модель',
+  traceTools: 'Инструменты',
+  traceErrors: 'Ошибки',
+  traceSystem: 'Система',
+  traceExport: 'Экспорт JSON',
+  traceExportHelp: 'Экспортировать полный журнал сеанса с сообщениями, аргументами и результатами',
+  traceTimeline: 'Шкала загруженных событий',
+  traceOlder: 'Загрузить предыдущие события',
+  traceLoading: 'Загружаем события…',
+  traceEmpty: 'Здесь появятся шаги модели, вызовы инструментов и результаты.',
+  traceNoMatches: 'По этому фильтру событий нет.',
+  traceShown: 'Показано {shown} из {total} событий',
+  traceStats: '{turns} ходов · {steps} шагов · {calls} вызовов · {errors} событий с ошибками · {duration} работы',
+  traceInterrupted: 'прервано',
+  traceTruncated: 'Показана начальная часть большого события. Полная запись доступна в экспорте JSON.',
+  traceExported: 'Траектория сохранена: {path}',
+  diagnosticsTitle: 'Диагностический журнал',
+  openDiagnostics: 'Открыть папку',
+  diagnosticsPending: 'Журнал сохраняется локально в папке приложения.',
 });
 
 /** @param {string} key @param {Record<string, string | number>} [values] @returns {string} */
@@ -133,6 +160,15 @@ let pendingMessageIndex = 0;
 let bridgeReady = false;
 /** @type {Map<string, {name: string, args?: unknown, result?: unknown, error?: unknown, callId?: string}[]>} */
 const traces = new Map();
+let selectedView = 'chat';
+let trajectorySessionId = null;
+let trajectoryRequest = 0;
+let trajectoryBefore = null;
+let trajectoryBusy = false;
+let trajectoryAgain = false;
+let trajectorySearchTimer;
+/** @type {TraceRow[]} */
+let trajectoryRows = [];
 
 document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.getAttribute('data-i18n')); });
 document.querySelectorAll('[data-i18n-placeholder]').forEach(node => { node.setAttribute('placeholder', t(node.getAttribute('data-i18n-placeholder'))); });
@@ -301,7 +337,125 @@ function render() {
   element('model-status-label').textContent = state.settings.model || t('modelNotConnected');
   element('model-status').title = state.settings.model || t('modelSettings');
   element('version').textContent = state.version;
+  element('diagnostics-path').textContent = state.diagnostics?.path || t('diagnosticsPending');
+  if (state.diagnostics?.error) { element('diagnostics-error').textContent = state.diagnostics.error; element('diagnostics-error').hidden = false; }
+  renderSessionView();
   updateComposer();
+}
+
+/** @param {number | undefined} milliseconds @returns {string} */
+function durationText(milliseconds) {
+  return milliseconds === undefined ? '—' : milliseconds < 1000 ? `${Math.round(milliseconds)} мс` : `${(milliseconds / 1000).toFixed(1)} с`;
+}
+
+/** @returns {void} */
+function renderSessionView() {
+  element('session-tabs').hidden = !currentSession();
+  const trajectory = selectedView === 'trajectory' && Boolean(currentSession());
+  controls.conversation.hidden = trajectory;
+  element('trajectory').hidden = !trajectory;
+  document.body.classList.toggle('trajectory-active', trajectory);
+  for (const view of ['chat', 'trajectory']) {
+    element(`${view}-tab`).setAttribute('aria-selected', String(view === (trajectory ? 'trajectory' : 'chat')));
+    element(`${view}-tab`).tabIndex = view === (trajectory ? 'trajectory' : 'chat') ? 0 : -1;
+  }
+  /** @type {HTMLButtonElement} */ (element('export-trajectory')).disabled = running || !currentSession();
+  if (trajectory && trajectorySessionId !== currentSessionId) {
+    trajectorySessionId = currentSessionId;
+    trajectoryRequest++;
+    trajectoryRows = []; trajectoryBefore = null;
+    delete element('trajectory').dataset.ready;
+    element('trajectory-rows').replaceChildren();
+    element('trajectory-lanes').replaceChildren();
+    element('trajectory-stats').textContent = '';
+    void refreshTrajectory();
+  }
+}
+
+/** @param {'chat' | 'trajectory'} view @returns {void} */
+function selectSessionView(view) {
+  const alreadyLoaded = trajectorySessionId === currentSessionId;
+  selectedView = view;
+  renderSessionView();
+  if (view === 'trajectory' && currentSessionId && alreadyLoaded) void refreshTrajectory();
+}
+
+/** @param {TraceRow[]} rows @returns {void} */
+function renderTrajectoryRows(rows) {
+  const container = element('trajectory-rows');
+  const existing = new Map(Array.from(container.children).map(node => [/** @type {HTMLElement} */ (node).dataset.key, node]));
+  let cursor = container.firstElementChild;
+  for (const row of rows) {
+    let details = /** @type {HTMLDetailsElement | undefined} */ (existing.get(row.key));
+    if (!details) {
+      details = document.createElement('details'); details.className = 'trace-event'; details.dataset.key = row.key;
+      const summary = document.createElement('summary');
+      for (const name of ['location', 'tag', 'preview', 'status', 'duration']) { const span = document.createElement('span'); span.className = `trace-${name}`; summary.append(span); }
+      const content = document.createElement('pre'); content.textContent = t('traceLoading');
+      details.append(summary, content);
+      const owned = details, sessionId = currentSessionId;
+      owned.addEventListener('toggle', async () => {
+        if (!owned.open || owned.dataset.loaded) return;
+        try {
+          const result = await window.lah.getTrajectoryDetail({ sessionId, key: owned.dataset.key });
+          if (sessionId !== currentSessionId || !owned.isConnected) return;
+          content.textContent = result.text + (result.truncated ? '\n\n' + t('traceTruncated') : ''); owned.dataset.loaded = 'true';
+        } catch (error) { content.textContent = errorText(error); }
+      });
+    }
+    details.dataset.kind = row.kind;
+    const cells = details.querySelector('summary').children;
+    cells[0].textContent = row.turn ? `${row.turn} · ${row.step || '—'}` : `#${row.seq ?? '—'}`;
+    cells[1].textContent = row.label; /** @type {HTMLElement} */ (cells[1]).title = row.type;
+    cells[2].textContent = row.preview.replace(/\s+/g, ' ');
+    cells[3].textContent = row.status === 'running' ? '…' : row.status === 'error' ? t('traceErrors') : row.status === 'interrupted' ? t('traceInterrupted') : '';
+    cells[4].textContent = row.durationMs === undefined ? '' : durationText(row.durationMs);
+    details.querySelector('summary').title = new Date(row.time).toLocaleTimeString('ru-RU') + ' · ' + row.type;
+    if (details !== cursor) container.insertBefore(details, cursor);
+    cursor = details.nextElementSibling;
+    existing.delete(row.key);
+  }
+  for (const obsolete of existing.values()) obsolete.remove();
+  const lanes = element('trajectory-lanes'); lanes.replaceChildren();
+  const start = rows[0]?.time ?? 0, end = rows.at(-1)?.time ?? start, span = Math.max(1, end - start);
+  for (const kind of ['input', 'model', 'tool']) {
+    const lane = document.createElement('div'); lane.className = 'timeline-lane';
+    for (const row of rows.filter(item => kind === 'input' ? item.type === 'user/message' : kind === 'model' ? ['assistant/message', 'assistant/attempt'].includes(item.type) || (item.type === 'step/start' && item.status === 'running') : item.type === 'tool/call')) {
+      const mark = document.createElement('button'); mark.type = 'button'; mark.className = 'timeline-mark'; mark.dataset.kind = row.kind;
+      if (row.status === 'error') mark.dataset.kind = 'error';
+      const begins = row.type.startsWith('assistant/') ? row.time - (row.durationMs ?? 0) : row.time;
+      const left = Math.max(0, Math.min(99, (begins - start) / span * 99));
+      mark.style.left = `${left}%`; mark.style.width = `${Math.max(.3, Math.min(100 - left, (row.durationMs ?? 0) / span * 99))}%`;
+      mark.title = `${row.label} · ${durationText(row.durationMs)}`; mark.setAttribute('aria-label', mark.title);
+      mark.addEventListener('click', () => { const target = Array.from(element('trajectory-rows').children).find(node => /** @type {HTMLElement} */ (node).dataset.key === row.key); if (target) { /** @type {HTMLDetailsElement} */ (target).open = true; target.scrollIntoView({ block: 'nearest' }); /** @type {HTMLElement} */ (target.querySelector('summary')).focus(); } });
+      lane.append(mark);
+    }
+    lanes.append(lane);
+  }
+}
+
+/** @param {boolean} [older] @returns {Promise<void>} */
+async function refreshTrajectory(older = false) {
+  if (selectedView !== 'trajectory' || !currentSessionId || !bridgeReady) return;
+  if (trajectoryBusy) { trajectoryAgain = true; return; }
+  const sessionId = currentSessionId, request = ++trajectoryRequest;
+  trajectoryBusy = true;
+  const status = element('trajectory-status');
+  if (!trajectoryRows.length) status.textContent = t('traceLoading');
+  const olderButton = /** @type {HTMLButtonElement} */ (element('trajectory-older')); olderButton.disabled = true;
+  try {
+    const result = await window.lah.getTrajectory({ sessionId, before: older ? trajectoryBefore : undefined, query: /** @type {HTMLInputElement} */ (element('trajectory-search')).value, kind: /** @type {HTMLSelectElement} */ (element('trajectory-filter')).value });
+    if (request !== trajectoryRequest || sessionId !== currentSessionId) return;
+    trajectoryRows = older ? [...result.rows, ...trajectoryRows] : result.rows;
+    trajectoryBefore = result.before;
+    element('trajectory').dataset.ready = 'true';
+    renderTrajectoryRows(trajectoryRows);
+    const summary = result.summary;
+    element('trajectory-stats').textContent = t('traceStats', { ...summary, duration: durationText(summary.durationMs) }) + (summary.tokens === null ? '' : ` · ${summary.tokens} токенов по отчётам сервера`);
+    status.textContent = trajectoryRows.length ? (trajectoryBefore ? t('traceShown', { shown: trajectoryRows.length, total: summary.matches }) : '') : t(summary.events ? 'traceNoMatches' : 'traceEmpty');
+    olderButton.hidden = !trajectoryBefore;
+  } catch (error) { if (request === trajectoryRequest) status.textContent = errorText(error); }
+  finally { trajectoryBusy = false; olderButton.disabled = false; if (trajectoryAgain) { trajectoryAgain = false; void refreshTrajectory(); } }
 }
 
 /** @param {AppState} next @returns {void} */
@@ -400,6 +554,7 @@ async function newSession() {
   try {
     const result = await window.lah.newSession();
     currentSessionId = result.sessionId;
+    selectedView = 'chat';
     pendingMessage = '';
     controls.input.value = '';
     controls.input.style.height = '';
@@ -498,7 +653,9 @@ async function saveSettings(event) {
 /** @param {{type: string, [key: string]: unknown}} event @returns {void} */
 function handleEvent(event) {
   if (event.type === 'state') receiveState(event.state);
-  else if (event.type === 'status') { running = event.status === 'running'; renderSessions(); updateComposer(); }
+  else if (event.type === 'status') { running = event.status === 'running'; renderSessions(); updateComposer(); renderSessionView(); if (!running) void refreshTrajectory(); }
+  else if (event.type === 'trajectory' && event.sessionId === currentSessionId) void refreshTrajectory();
+  else if (event.type === 'diagnostic-error') { element('diagnostics-error').textContent = String(event.message); element('diagnostics-error').hidden = false; }
   else if (event.type === 'error') showNotice(String(event.message));
   else if (event.type === 'tool') {
     const sessionId = event.sessionId ?? currentSessionId;
@@ -514,6 +671,22 @@ function handleEvent(event) {
 }
 
 element('new-session').addEventListener('click', newSession);
+element('chat-tab').addEventListener('click', () => selectSessionView('chat'));
+element('trajectory-tab').addEventListener('click', () => selectSessionView('trajectory'));
+element('session-tabs').addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const view = event.key === 'Home' ? 'chat' : event.key === 'End' ? 'trajectory' : selectedView === 'chat' ? 'trajectory' : 'chat';
+  selectSessionView(view); element(`${view}-tab`).focus();
+});
+element('trajectory-search').addEventListener('input', () => { clearTimeout(trajectorySearchTimer); trajectoryRequest++; trajectorySearchTimer = setTimeout(() => { void refreshTrajectory(); }, 180); });
+element('trajectory-filter').addEventListener('change', () => { trajectoryRequest++; void refreshTrajectory(); });
+element('trajectory-older').addEventListener('click', () => { void refreshTrajectory(true); });
+element('export-trajectory').addEventListener('click', async () => { try { const result = await window.lah.exportSession(currentSessionId); if (!result.canceled) element('trajectory-status').textContent = t('traceExported', { path: result.path }); } catch (error) { element('trajectory-status').textContent = errorText(error); } });
+element('open-diagnostics').addEventListener('click', async () => { try { await window.lah.openDiagnostics(); } catch (error) { element('diagnostics-error').textContent = errorText(error); element('diagnostics-error').hidden = false; } });
+function reportRendererError(error) { if (window.lah?.reportError) void window.lah.reportError({ message: errorText(error), stack: error instanceof Error ? error.stack : undefined }).catch(failure => console.error('LAH error report failed', failure)); }
+window.addEventListener('error', event => reportRendererError(event.error ?? event.message));
+window.addEventListener('unhandledrejection', event => reportRendererError(event.reason));
 ['workspace', 'setup-workspace', 'settings-workspace'].forEach(id => { element(id).addEventListener('click', chooseWorkspace); });
 element('open-settings').addEventListener('click', () => openSettings('general'));
 ['model-status', 'menu-model'].forEach(id => { element(id).addEventListener('click', () => openSettings('models')); });

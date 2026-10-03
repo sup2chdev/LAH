@@ -1,10 +1,12 @@
 /** LAH's account-free desktop carrier; model requests use the fork's agent loop. */
-const { app, BrowserWindow, dialog, ipcMain, Menu } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron')
 const { readFile, writeFile, mkdir, rename, stat } = require('node:fs/promises')
 const { join, resolve } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { randomUUID } = require('node:crypto')
 const { createLahKernel } = require('./kernel.cjs')
+const { trajectoryPage, trajectoryDetail } = require('./desktop/trajectory.cjs')
+const { createDiagnosticLog, errorFields } = require('./desktop/diagnostics.cjs')
 
 app.setName('LAH')
 if (process.platform === 'win32') app.setAppUserModelId('LocalAgentHarness.LAH')
@@ -14,6 +16,7 @@ const dataArgument = process.argv.find(value => value.startsWith('--lah-data='))
 app.setPath('userData', dataArgument ? resolve(dataArgument.slice('--lah-data='.length)) : join(app.getPath('appData'), 'LocalAgentHarness'))
 const smoke = process.argv.includes('--lah-smoke')
 const statePath = join(app.getPath('userData'), 'lah-state.json')
+const diagnosticLog = createDiagnosticLog(join(app.getPath('userData'), 'logs'))
 const defaultSettings = { endpoint: 'http://127.0.0.1:1234/v1', model: '', contextWindow: 32768, maxTokens: 4096, workspace: '' }
 let state = { settings: { ...defaultSettings }, sessions: [] }
 let window
@@ -22,6 +25,7 @@ let busy = false
 let stopRequested = false
 let closing = false
 let writeQueue = Promise.resolve()
+let activeRunId
 const tools = [
   { name: 'list_directory', description: 'Список файлов и папок' },
   { name: 'search_files', description: 'Поиск файлов по имени' },
@@ -51,12 +55,61 @@ function parseSettings(value) {
   return { endpoint, model: value.model.trim(), workspace: value.workspace ? resolve(value.workspace) : '', contextWindow, maxTokens }
 }
 function publicState() {
-  return { settings: state.settings, sessions: state.sessions.map(({ events, ...session }) => session), tools, version: '0.0.1-prealpha' }
+  return { settings: state.settings, sessions: state.sessions.map(({ events, failures, ...session }) => ({ ...session, eventCount: events.length, failureCount: failures?.length ?? 0 })), tools, version: '0.0.1-prealpha', diagnostics: diagnosticLog.status() }
 }
 function emit(event) {
   if (window && !window.isDestroyed()) window.webContents.send('lah:event', event)
 }
 function publish() { emit({ type: 'state', state: publicState() }) }
+function diagnose(level, event, fields = {}) {
+  void diagnosticLog.write(level, event, fields).catch(error => { console.error('LAH diagnostic log:', error.message); emit({ type: 'diagnostic-error', message: error.message }) })
+}
+function sessionById(id) {
+  if (typeof id !== 'string') throw new Error('Некорректный ID чата.')
+  const session = state.sessions.find(item => item.id === id)
+  if (!session) throw new Error('Чат не найден.')
+  return session
+}
+function kernelEvent(event) {
+  if (event.type === 'trajectory-snapshot') {
+    const session = state.sessions.find(item => item.id === event.sessionId)
+    if (session && event.events) { session.events = [...event.events]; emit({ type: 'trajectory', sessionId: session.id, revision: session.events.length }) }
+    return
+  }
+  if (event.type !== 'trajectory') { emit(event); return }
+  const session = state.sessions.find(item => item.id === event.sessionId)
+  if (!session || !event.event) return
+  const record = event.event
+  if (record.seq === session.events.length) session.events.push(record)
+  else if (record.seq < session.events.length) session.events[record.seq] = record
+  else { diagnose('error', 'session/sequence-gap', { sessionId: session.id, expected: session.events.length, actual: record.seq }); return }
+  const failure = record.type === 'turn/end' && record.data.reason?.kind === 'error' ? record.data.reason.error : undefined
+  diagnose(failure || record.data.message?.isError ? 'error' : 'info', record.type, { sessionId: session.id, runId: activeRunId, seq: record.seq, turn: record.data.turn, step: record.data.step, tool: record.type === 'tool/call' ? record.data.name : undefined, callId: record.data.callId ?? record.data.message?.toolCallId, ...(failure ? { code: failure.code, status: failure.status, message: failure.message?.slice(0, 2048) } : {}) })
+  emit({ type: 'trajectory', sessionId: session.id, revision: session.events.length })
+  if (['turn/start', 'turn/end', 'tool/call', 'tool/result', 'assistant/message', 'assistant/attempt'].includes(record.type)) {
+    void checkpoint(session.id)
+  }
+}
+async function checkpoint(sessionId) {
+  try { await persist() }
+  catch (error) { diagnose('error', 'state/write-error', errorFields(error)); emit({ type: 'error', sessionId, message: 'Не удалось сохранить историю: ' + error.message }) }
+}
+function handle(name, handler) {
+  ipcMain.handle(name, async (event, ...args) => {
+    assertOwner(event)
+    const measured = !['lah:state', 'lah:trajectory', 'lah:trajectory-detail', 'lah:renderer-error'].includes(name)
+    const requestId = randomUUID(), started = performance.now()
+    if (measured) diagnose('info', 'ipc/start', { operation: name, requestId })
+    try {
+      const result = await handler(event, ...args)
+      if (measured) diagnose('info', 'ipc/end', { operation: name, requestId, durationMs: Math.round(performance.now() - started) })
+      return result
+    } catch (error) {
+      diagnose('error', 'ipc/error', { operation: name, requestId, durationMs: Math.round(performance.now() - started), ...errorFields(error) })
+      throw error
+    }
+  })
+}
 function persist() {
   const document = JSON.stringify({ format: 1, ...state })
   if (Buffer.byteLength(document) > 64 * 1024 * 1024) throw new Error('История LAH достигла 64 МиБ. Новые данные не сохранены.')
@@ -82,9 +135,35 @@ function newSession() {
   return session
 }
 
-ipcMain.handle('lah:state', event => { assertOwner(event); return publicState() })
-ipcMain.handle('lah:settings', async (event, input) => {
-  assertOwner(event); requireIdle()
+handle('lah:state', () => publicState())
+handle('lah:trajectory', (_event, input) => {
+  if (!input || typeof input !== 'object') throw new Error('Некорректный запрос траектории.')
+  return trajectoryPage(sessionById(input.sessionId), input)
+})
+handle('lah:trajectory-detail', (_event, input) => {
+  if (!input || typeof input.key !== 'string' || input.key.length > 128) throw new Error('Некорректный запрос события.')
+  return trajectoryDetail(sessionById(input.sessionId), input.key)
+})
+handle('lah:export-session', async (_event, sessionId) => {
+  requireIdle()
+  const session = structuredClone(sessionById(sessionId))
+  const result = await dialog.showSaveDialog(window, { title: 'Экспорт траектории', defaultPath: 'LAH-trajectory.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
+  if (result.canceled || !result.filePath) return { canceled: true }
+  const diagnostics = await diagnosticLog.readRecords()
+  await writeFile(result.filePath, JSON.stringify({ format: 1, exportedAt: new Date().toISOString(), app: { name: 'LAH', version: '0.0.1-prealpha', electron: process.versions.electron, platform: process.platform }, session, diagnostics }, null, 2), { mode: 0o600 })
+  return { canceled: false, path: result.filePath }
+})
+handle('lah:open-diagnostics', async () => {
+  await mkdir(join(app.getPath('userData'), 'logs'), { recursive: true })
+  const error = await shell.openPath(join(app.getPath('userData'), 'logs'))
+  if (error) throw new Error(error)
+})
+handle('lah:renderer-error', (_event, input) => {
+  if (!input || typeof input.message !== 'string') throw new Error('Некорректный отчёт об ошибке.')
+  diagnose('error', 'renderer/error', { message: input.message.slice(0, 2048), stack: typeof input.stack === 'string' ? input.stack.slice(0, 8192) : undefined })
+})
+handle('lah:settings', async (_event, input) => {
+  requireIdle()
   const settings = parseSettings(input)
   if (settings.workspace && !(await stat(settings.workspace)).isDirectory()) throw new Error('Выберите существующую папку проекта.')
   await closeKernel()
@@ -92,8 +171,8 @@ ipcMain.handle('lah:settings', async (event, input) => {
   await persist(); publish()
   return publicState()
 })
-ipcMain.handle('lah:workspace', async event => {
-  assertOwner(event); requireIdle()
+handle('lah:workspace', async () => {
+  requireIdle()
   const result = await dialog.showOpenDialog(window, { title: 'Выберите папку проекта', properties: ['openDirectory'] })
   if (!result.canceled && result.filePaths[0]) {
     await closeKernel()
@@ -102,8 +181,7 @@ ipcMain.handle('lah:workspace', async event => {
   }
   return { workspace: state.settings.workspace }
 })
-ipcMain.handle('lah:models', async (event, endpoint) => {
-  assertOwner(event)
+handle('lah:models', async (_event, endpoint) => {
   const base = parseEndpoint(endpoint)
   const response = await fetch(`${base}/models`, { signal: AbortSignal.timeout(10000), redirect: 'error' })
   if (!response.ok) throw new Error(`Сервер вернул HTTP ${response.status}. Проверьте URL с окончанием /v1.`)
@@ -121,14 +199,14 @@ ipcMain.handle('lah:models', async (event, endpoint) => {
   if (!Array.isArray(data.data)) throw new Error('Сервер не вернул OpenAI-совместимый список моделей.')
   return { models: data.data.filter(item => item && typeof item.id === 'string').slice(0, 1000).map(({ id }) => ({ id })) }
 })
-ipcMain.handle('lah:new-session', async event => {
-  assertOwner(event); requireIdle()
+handle('lah:new-session', async () => {
+  requireIdle()
   const session = newSession()
   await persist(); publish()
   return { sessionId: session.id }
 })
-ipcMain.handle('lah:send', async (event, input) => {
-  assertOwner(event); requireIdle()
+handle('lah:send', async (_event, input) => {
+  requireIdle()
   if (!input || typeof input.message !== 'string' || !input.message.trim() || input.message.length > 32000) throw new Error('Введите сообщение длиной до 32000 символов.')
   if (!state.settings.model || !state.settings.workspace) throw new Error('Выберите папку проекта и укажите модель в настройках.')
   if (input.sessionId !== undefined && typeof input.sessionId !== 'string') throw new Error('Некорректный ID чата.')
@@ -139,34 +217,50 @@ ipcMain.handle('lah:send', async (event, input) => {
   session.workspace = state.settings.workspace
   busy = true
   stopRequested = false
+  activeRunId = randomUUID()
+  const started = performance.now()
+  diagnose('info', 'run/start', { sessionId: session.id, runId: activeRunId, model: state.settings.model, endpoint: state.settings.endpoint, contextWindow: state.settings.contextWindow, maxTokens: state.settings.maxTokens })
   const message = input.message.trim()
   try {
-    kernel ??= await createLahKernel(state.settings, event => emit(event))
+    kernel ??= await createLahKernel(state.settings, kernelEvent)
     if (stopRequested) return { sessionId: session.id, content: '' }
     session.messages.push({ role: 'user', content: message })
     if (session.messages.length === 1) session.title = message.slice(0, 56)
     await persist(); publish()
     const result = await kernel.run(session.id, message, session.events)
-    session.events = result.events
+    session.events = [...result.events]
     if (result.content) session.messages.push({ role: 'assistant', content: result.content })
     await persist(); publish()
     if (result.error) throw new Error(result.error)
     return { sessionId: session.id, content: result.content }
   } catch (error) {
+    session.failures ??= []
+    session.failures.push({ id: randomUUID(), time: Date.now(), runId: activeRunId, ...errorFields(error) })
+    session.failures = session.failures.slice(-100)
+    try { await persist(); publish() } catch (saveError) { diagnose('error', 'state/write-error', errorFields(saveError)) }
+    diagnose('error', 'run/error', { sessionId: session.id, runId: activeRunId, ...errorFields(error) })
     emit({ type: 'error', sessionId: session.id, message: error.message })
     throw error
-  } finally { busy = false; emit({ type: 'status', sessionId: session.id, status: 'idle' }) }
+  } finally { diagnose('info', 'run/end', { sessionId: session.id, runId: activeRunId, durationMs: Math.round(performance.now() - started), stopped: stopRequested }); activeRunId = undefined; busy = false; emit({ type: 'status', sessionId: session.id, status: 'idle' }) }
 })
-ipcMain.handle('lah:stop', async event => { assertOwner(event); stopRequested = true; await kernel?.stop() })
+handle('lah:stop', async () => { stopRequested = true; await kernel?.stop() })
 
 app.on('before-quit', event => {
   if (closing) return
   event.preventDefault(); closing = true
-  void closeKernel().then(() => writeQueue).then(() => app.quit()).catch(error => { console.error(error); app.exit(1) })
+  diagnose('info', 'app/stop')
+  void closeKernel().then(() => writeQueue).then(() => diagnosticLog.flush()).then(() => app.quit()).catch(error => { console.error(error); app.exit(1) })
 })
 app.on('window-all-closed', () => app.quit())
+function fatal(error, source) {
+  console.error(error)
+  void diagnosticLog.write('error', source, errorFields(error)).catch(logError => console.error(logError)).finally(() => app.exit(1))
+}
+process.on('uncaughtException', error => fatal(error, 'main/uncaught-exception'))
+process.on('unhandledRejection', error => fatal(error, 'main/unhandled-rejection'))
 
 app.whenReady().then(async () => {
+  diagnose('info', 'app/start', { version: '0.0.1-prealpha', electron: process.versions.electron, node: process.versions.node, platform: process.platform })
   try {
     const saved = JSON.parse(await readFile(statePath, 'utf8'))
     if (saved.format !== 1 || !Array.isArray(saved.sessions)) throw new Error('Формат истории LAH не поддерживается.')
@@ -175,6 +269,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     if (error.code !== 'ENOENT') {
       console.error(error)
+      await diagnosticLog.write('error', 'state/read-error', errorFields(error)).catch(logError => console.error(logError))
       if (!smoke) await dialog.showMessageBox({ type: 'error', title: 'LAH', message: 'Не удалось прочитать историю. Файл сохранён без изменений.', detail: error.message })
       app.exit(1); return
     }
@@ -188,6 +283,9 @@ app.whenReady().then(async () => {
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('render-process-gone', (_event, details) => diagnose('error', 'renderer/process-gone', details))
+  window.webContents.on('did-fail-load', (_event, code, description) => diagnose('error', 'renderer/load-error', { code, description }))
+  window.on('unresponsive', () => diagnose('warn', 'renderer/unresponsive'))
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   await window.loadURL(pathToFileURL(join(__dirname, 'renderer/index.html')).href)
@@ -200,9 +298,19 @@ app.whenReady().then(async () => {
       snapshot.integration = await window.webContents.executeJavaScript(`(async () => {
         await window.lah.saveSettings(${JSON.stringify(settings)});
         const models = await window.lah.discoverModels(${JSON.stringify(settings.endpoint)});
-        const created = await window.lah.newSession();
+        const created = ${process.argv.includes('--lah-e2e-resume')} ? { sessionId: (await window.lah.getState()).sessions[0].id } : await window.lah.newSession();
         const reply = await window.lah.send({ sessionId: created.sessionId, message: 'Read README.md and tell me the marker.' });
-        return { models, reply, state: await window.lah.getState() };
+        const state = await window.lah.getState();
+        let failure;
+        if (${process.argv.includes('--lah-e2e-failure')}) {
+          try { await window.lah.send({ sessionId: created.sessionId, message: 'Exercise the diagnostic failure.' }); }
+          catch (error) { failure = error.message; }
+          if (!failure) throw new Error('Expected the fixture model failure');
+        }
+        const trajectory = await window.lah.getTrajectory({ sessionId: created.sessionId });
+        const result = trajectory.rows.find(row => row.type === 'tool/result');
+        const detail = result ? await window.lah.getTrajectoryDetail({ sessionId: created.sessionId, key: result.key }) : null;
+        return { models, reply, state, failure, trajectory, detail };
       })()`)
       snapshot.text = await window.webContents.executeJavaScript('document.body.innerText')
     }
@@ -268,25 +376,60 @@ app.whenReady().then(async () => {
         ['sidebar-hidden', 'dark', null, false, 1280, 820, true],
         ['compact-dark', 'dark', null, false, 960, 680], ['compact-settings', 'dark', 'models', false, 960, 680],
         ['compact-actions', 'dark', null, true, 960, 680],
+        ['trajectory-dark', 'dark', 'trajectory', false, 1280, 820],
+        ['trajectory-light', 'light', 'trajectory', false, 1280, 820],
+        ['compact-trajectory', 'dark', 'trajectory', false, 960, 680],
+        ['trajectory-detail', 'dark', 'trajectory-detail', false, 1280, 820],
       ]) {
         window.setSize(width, height)
+        const traceReview = section === 'trajectory' || section === 'trajectory-detail'
+        const settingsReview = Boolean(section) && !traceReview
         const layout = await window.webContents.executeJavaScript(`(async () => {
           if (document.getElementById('sidebar').hidden !== ${sidebarCollapsed}) document.getElementById('toggle-sidebar').click();
           if (document.documentElement.dataset.theme !== ${JSON.stringify(theme)}) document.getElementById('theme-toggle').click();
           const dialog = document.getElementById('settings-dialog');
-          if (${Boolean(section)} && !dialog.open) document.getElementById('open-settings').click();
-          if (!${Boolean(section)} && dialog.open) document.getElementById('close-settings').click();
-          if (${Boolean(section)}) document.querySelector('[data-settings-section="' + ${JSON.stringify(section)} + '"]').click();
+          if (${settingsReview} && !dialog.open) document.getElementById('open-settings').click();
+          if (!${settingsReview} && dialog.open) document.getElementById('close-settings').click();
+          if (${settingsReview}) document.querySelector('[data-settings-section="' + ${JSON.stringify(section)} + '"]').click();
+          if (${traceReview}) {
+            if (!(await window.lah.getState()).sessions.length) await window.lah.newSession();
+            document.getElementById('trajectory-tab').click();
+            await new Promise((resolve, reject) => {
+              const deadline = performance.now() + 5000;
+              const inspect = () => {
+                if (document.getElementById('trajectory').dataset.ready === 'true') resolve();
+                else if (performance.now() >= deadline) reject(new Error('Trajectory did not load'));
+                else setTimeout(inspect, 16);
+              }; inspect();
+            });
+            if (${section === 'trajectory-detail'}) {
+              const details = Array.from(document.querySelectorAll('.trace-event')).find(node => node.querySelector('.trace-tag').title === 'tool/result');
+              if (details) {
+                details.open = true;
+                await new Promise((resolve, reject) => {
+                  const deadline = performance.now() + 5000;
+                  const inspect = () => { if (details.dataset.loaded) resolve(); else if (performance.now() >= deadline) reject(new Error('Event detail did not load')); else setTimeout(inspect, 16); }; inspect();
+                });
+                details.scrollIntoView({ block: 'center' });
+              }
+            }
+          } else document.getElementById('chat-tab').click();
           if (${menuOpen}) document.getElementById('composer-add').click();
           await document.fonts.ready;
           await new Promise(resolve => setTimeout(resolve, 150));
-          const elements = ['empty-state', 'composer', 'settings-dialog', 'save-settings', 'composer-menu'].map(id => {
+          const elements = ['empty-state', 'composer', 'settings-dialog', 'save-settings', 'composer-menu', 'session-tabs', 'trajectory', 'trajectory-toolbar', 'trajectory-scroll'].map(id => {
             const node = document.getElementById(id), rect = node.getBoundingClientRect(), style = getComputedStyle(node);
             return { id, x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height, color: style.color, background: style.backgroundColor };
           });
           return { theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight], elements, fonts: document.fonts.check('500 23px Montserrat'), symbols: document.querySelectorAll('symbol').length, overlay: navigator.windowControlsOverlay?.visible, menuOpen: document.getElementById('composer-menu').matches(':popover-open'), sidebarCollapsed: document.getElementById('sidebar').hidden };
         })()`)
         await writeFile(join(app.getPath('userData'), `${name}.png`), (await window.webContents.capturePage()).toPNG())
+        if (traceReview) {
+          for (const id of ['session-tabs', 'trajectory', 'trajectory-toolbar', 'trajectory-scroll', 'composer']) {
+            const rect = layout.elements.find(element => element.id === id)
+            if (rect.width <= 0 || rect.height <= 0 || rect.x < 0 || rect.y < 40 || rect.right > width || rect.bottom > height) throw new Error(`LAH ${id} escapes ${name}`)
+          }
+        }
         if (menuOpen) {
           const menuRect = layout.elements.find(element => element.id === 'composer-menu')
           if (!layout.menuOpen || menuRect.x < 0 || menuRect.y < 40 || menuRect.right > width || menuRect.bottom > height) throw new Error(`LAH action menu escapes ${name}`)
@@ -320,4 +463,4 @@ app.whenReady().then(async () => {
     console.log(`LAH_SMOKE_OK ${output}`)
     app.quit()
   }
-}).catch(error => { console.error(error); app.exit(1) })
+}).catch(error => fatal(error, 'app/start-error'))

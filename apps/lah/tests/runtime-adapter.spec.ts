@@ -12,16 +12,16 @@ afterEach(async () => {
   for (const dispose of cleanup.splice(0).reverse()) await dispose()
 })
 
-const config: Config = {
+const config = {
   endpoint: 'http://127.0.0.1:1234/v1', model: 'local-test', workspace: '.', appVersion: '0.0.1-prealpha',
   contextWindow: 32768, maxTokens: 4096, requestTimeoutMs: 10000, maxFileBytes: 1024,
   maxOutputChars: 512, maxResults: 10, maxVisitedEntries: 100, maxDepth: 4, excludedDirectories: [],
-}
+} satisfies Config
 
 async function server(handler: (request: IncomingMessage, response: ServerResponse) => void) {
   const http = createServer(handler)
   cleanup.push(() => new Promise<void>((resolve, reject) => {
-    http.close(error => error === undefined ? resolve() : reject(error))
+    http.close((error) => { if (error === undefined) resolve(); else reject(error) })
     http.closeAllConnections()
   }))
   await new Promise<void>((resolve, reject) => {

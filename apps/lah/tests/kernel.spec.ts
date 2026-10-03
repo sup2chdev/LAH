@@ -21,17 +21,20 @@ async function fixture(handler: (body: WireRequest, response: ServerResponse, re
   cleanup.push(() => rm(workspace, { recursive: true, force: true }))
   await writeFile(join(workspace, 'README.md'), 'LAH fixture: violet-472\nRead only.\n')
   const requests: WireRequest[] = []
-  const server = createServer(async (request, response) => {
-    const chunks: Buffer[] = []
-    for await (const chunk of request) chunks.push(Buffer.from(chunk))
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as WireRequest
-    requests.push(body)
-    handler(body, response, request)
+  const server = createServer((request, response) => {
+    let text = ''
+    request.setEncoding('utf8')
+    request.on('data', (chunk) => { text += String(chunk) })
+    request.on('end', () => {
+      const body = JSON.parse(text) as WireRequest
+      requests.push(body)
+      handler(body, response, request)
+    })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   cleanup.push(async () => {
     server.closeAllConnections()
-    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    await new Promise<void>((resolve, reject) => server.close((error) => { if (error) reject(error); else resolve() }))
   })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('No fixture port')
@@ -62,6 +65,7 @@ describe('bundled LAH profile', () => {
     cleanup.push(() => kernel.close())
     const first = await kernel.run('lah-fixture', 'Find the marker in README.')
     expect(first.error).toBeUndefined()
+    expect(events.filter(event => event.type === 'trajectory').map(event => event.event)).toEqual(first.events)
     expect(first.content).toBe('Found violet-472 in README.md.')
     expect(fixtureData.requests[0].tools.map(tool => tool.function.name)).toEqual(['list_directory', 'read_file', 'search_content', 'search_files'])
     const results = fixtureData.requests[1].messages.filter(message => message.role === 'tool')
@@ -77,10 +81,15 @@ describe('bundled LAH profile', () => {
     })
     expect(transcript).toEqual(JSON.parse(await readFile(new URL('./expected/read-only-transcript.json', import.meta.url), 'utf8')))
     await kernel.close()
-    const resumed = await createLahKernel(fixtureData.settings, () => {})
+    const resumedEvents: KernelEvent[] = []
+    const resumed = await createLahKernel(fixtureData.settings, event => resumedEvents.push(event))
     cleanup.push(() => resumed.close())
     const second = await resumed.run('lah-fixture', 'Remind me of the marker.', first.events)
     expect(second.content).toBe('Still violet-472.')
+    const restoredLedger = resumedEvents.find(event => event.type === 'trajectory-snapshot')?.events
+    expect(restoredLedger?.slice(0, first.events.length)).toEqual(first.events)
+    expect(restoredLedger?.at(-1)?.type).toBe('session/end-seed')
+    expect(resumedEvents.filter(event => event.type === 'trajectory').map(event => event.event)).toEqual(second.events.slice(restoredLedger!.length))
     expect(fixtureData.requests[2].messages.some(message => message.content === 'Found violet-472 in README.md.')).toBe(true)
     expect(events.some(event => event.type === 'tool' && event.result)).toBe(true)
   })

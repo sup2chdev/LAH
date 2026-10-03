@@ -27,6 +27,7 @@ await build({
 })
 await cp(resolve(appRoot, 'main.cjs'), resolve(appRoot, 'dist/main.cjs'))
 await cp(resolve(appRoot, 'preload.cjs'), resolve(appRoot, 'dist/preload.cjs'))
+await cp(resolve(appRoot, 'desktop'), resolve(appRoot, 'dist/desktop'), { recursive: true })
 await cp(resolve(appRoot, 'renderer'), resolve(appRoot, 'dist/renderer'), { recursive: true })
 // The standalone carrier consumes the fork's theme assets and existing icon geometry.
 const themeRoot = resolve(root, 'packages/client/ui-theme/src/styles')
