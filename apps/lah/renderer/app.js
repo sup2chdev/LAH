@@ -14,7 +14,6 @@ const ru = Object.freeze({
   historyAria: 'История сеансов',
   conversationAria: 'Переписка',
   messageAria: 'Сообщение',
-  sessionLabel: 'РАБОЧИЙ СЕАНС',
   noSessions: 'Здесь появятся ваши сеансы',
   untitledSession: 'Новый сеанс',
   workspace: 'Рабочая папка',
@@ -26,14 +25,10 @@ const ru = Object.freeze({
   lightTheme: 'Светлая тема',
   darkTheme: 'Тёмная тема',
   modelNotConnected: 'Модель не настроена',
-  emptyEyebrow: 'ВАШ ЛОКАЛЬНЫЙ АГЕНТ',
   emptyTitle: 'Что исследуем сегодня?',
-  emptyDescription: 'Ваш локальный агент для работы с проектами',
+  localMode: 'Локальный агент',
   pickFolder: 'Выбрать папку',
-  pickFolderDetail: 'Агент сможет читать и искать только внутри неё',
-  connectModel: 'Подключить модель',
-  connectModelDetail: 'LM Studio, llama.cpp или vLLM · OpenAI API',
-  examples: 'Например, можно попросить',
+  quickActions: 'Быстрые действия',
   suggestionStructure: 'Объясни структуру этой папки',
   suggestionSearch: 'Найди, где настраивается запуск проекта',
   suggestionRead: 'Прочитай README и кратко опиши проект',
@@ -42,14 +37,12 @@ const ru = Object.freeze({
   suggestionReadLabel: 'Прочитать README',
   messagePlaceholder: 'Что найти или изучить в рабочей папке?',
   send: 'Отправить',
-  readMode: 'Чтение и поиск',
   stop: 'Остановить',
   working: 'Локальная модель обрабатывает запрос',
   hintReady: 'Enter — отправить · Shift+Enter — новая строка',
   hintWorkspace: 'Сначала выберите рабочую папку',
   hintModel: 'Укажите локальный сервер и модель в настройках',
   hintRunning: 'Можно остановить текущий запрос',
-  composerCaption: 'Локально. Файлы остаются без изменений.',
   availableTools: 'Инструменты агента',
   toolTrace: 'Вызовы инструментов',
   toolPending: 'Выполняется',
@@ -59,8 +52,15 @@ const ru = Object.freeze({
   user: 'Вы',
   assistant: 'LAH',
   tool: 'Инструмент',
-  settingsEyebrow: 'ПОДКЛЮЧЕНИЕ',
   modelSettings: 'Локальная модель',
+  generalSettings: 'Основные',
+  modelsSettings: 'Модели',
+  toolsSettings: 'Инструменты',
+  appearance: 'Оформление',
+  accessMode: 'Режим доступа',
+  readOnlyHelp: 'Чтение и поиск внутри выбранной папки',
+  themeHelp: 'В преальфе выбранная тема действует до закрытия окна.',
+  toolsHelp: 'Эти инструменты доступны агенту для чтения и поиска в рабочей папке.',
   settingsDescription: 'Запустите модель в своём локальном сервере, затем укажите его адрес и ID модели. LAH не загружает модели и не требует аккаунта или API-ключа.',
   endpoint: 'Адрес OpenAI-совместимого сервера',
   endpointHelp: 'URL с /v1. Пример для LM Studio: http://127.0.0.1:1234/v1',
@@ -119,6 +119,7 @@ const controls = {
   maxTokens: /** @type {HTMLInputElement} */ (element('max-tokens-input')),
   trace: /** @type {HTMLDetailsElement} */ (element('tool-trace')),
   toolEvents: element('tool-events'),
+  menu: element('composer-menu'),
 };
 
 /** @type {AppState} */
@@ -138,7 +139,7 @@ document.querySelectorAll('[data-suggestion]').forEach(node => {
   const suggestion = t(node.getAttribute('data-suggestion'));
   const label = node.querySelector('[data-suggestion-label]');
   if (label) label.textContent = t(label.getAttribute('data-suggestion-label'));
-  node.addEventListener('click', () => { controls.input.value = suggestion; updateComposer(); controls.input.focus(); });
+  node.addEventListener('click', () => { controls.input.value = suggestion; controls.menu.hidePopover(); updateComposer(); controls.input.focus(); });
 });
 
 /** @param {unknown} error @returns {string} */
@@ -173,7 +174,7 @@ function updateComposer() {
   element('working-indicator').hidden = !running;
   element('composer-hint').textContent = t(running ? 'hintRunning' : !hasWorkspace ? 'hintWorkspace' : !hasModel ? 'hintModel' : 'hintReady');
   /** @type {HTMLButtonElement} */ (element('new-session')).disabled = !bridgeReady || running;
-  ['workspace', 'setup-workspace', 'settings-workspace'].forEach(id => { /** @type {HTMLButtonElement} */ (element(id)).disabled = !bridgeReady || running; });
+  ['workspace', 'setup-workspace', 'settings-workspace', 'composer-add'].forEach(id => { /** @type {HTMLButtonElement} */ (element(id)).disabled = !bridgeReady || running; });
   /** @type {HTMLButtonElement} */ (element('save-settings')).disabled = !bridgeReady || running;
   /** @type {HTMLButtonElement} */ (element('discover-models')).disabled = !bridgeReady || running;
 }
@@ -294,14 +295,8 @@ function render() {
   controls.workspacePath.textContent = workspace || t('workspaceNotSelected');
   /** @type {HTMLButtonElement} */ (element('workspace')).title = workspace || t('chooseWorkspace');
   element('settings-workspace-path').textContent = workspace || t('workspaceNotSelected');
-  element('workspace-check').textContent = workspace ? '✓' : '';
-  element('model-check').textContent = state.settings.model ? '✓' : '';
   element('setup-workspace-label').textContent = workspace ? controls.workspaceName.textContent : t('chooseWorkspace');
-  element('setup-model-label').textContent = state.settings.model || t('connectModel');
-  element('setup-workspace').classList.toggle('complete', Boolean(workspace));
-  element('setup-model').classList.toggle('complete', Boolean(state.settings.model));
   element('model-status-label').textContent = state.settings.model || t('modelNotConnected');
-  element('model-status').classList.toggle('ready', Boolean(state.settings.model));
   element('version').textContent = state.version;
   updateComposer();
 }
@@ -314,15 +309,50 @@ function receiveState(next) {
   render();
 }
 
-/** @returns {void} */
-function openSettings() {
+/** @param {'general' | 'models' | 'tools'} section @returns {void} */
+function selectSettingsSection(section) {
+  document.querySelectorAll('[data-settings-section]').forEach(node => {
+    if (node.getAttribute('data-settings-section') === section) node.setAttribute('aria-current', 'page');
+    else node.removeAttribute('aria-current');
+  });
+  ['general', 'models', 'tools'].forEach(name => { element(`settings-${name}`).hidden = name !== section; });
+  element('settings-footer').hidden = section !== 'models';
+  element('settings-error').hidden = true;
+}
+
+/** @param {'general' | 'models' | 'tools'} [section] @returns {void} */
+function openSettings(section = 'general') {
   controls.endpoint.value = state.settings.endpoint;
   controls.model.value = state.settings.model;
   controls.context.value = String(state.settings.contextWindow);
   controls.maxTokens.value = String(state.settings.maxTokens);
   element('discovery-status').textContent = '';
   element('settings-error').hidden = true;
+  selectSettingsSection(section);
   if (!controls.settings.open) controls.settings.showModal();
+}
+
+/** @param {'light' | 'dark'} theme @returns {void} */
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  document.body.toggleAttribute('data-ds-dark-theme', theme === 'dark');
+  element('theme-toggle').setAttribute('aria-label', t(theme === 'dark' ? 'lightTheme' : 'darkTheme'));
+  element('theme-tooltip').textContent = t(theme === 'dark' ? 'lightTheme' : 'darkTheme');
+  element('theme-icon').setAttribute('href', theme === 'dark' ? '#icon-light' : '#icon-dark');
+  document.querySelectorAll('[data-theme-choice]').forEach(node => { node.setAttribute('aria-pressed', String(node.getAttribute('data-theme-choice') === theme)); });
+}
+
+/** Fit the action menu above or below the input card without clipping it at a window edge. @returns {void} */
+function placeComposerMenu() {
+  const card = element('composer').getBoundingClientRect();
+  const width = Math.min(card.width, window.innerWidth - 32);
+  const above = Math.max(0, card.top - 24);
+  const below = Math.max(0, window.innerHeight - card.bottom - 24);
+  controls.menu.style.width = `${width}px`;
+  controls.menu.style.left = `${Math.max(16, Math.min(card.left, window.innerWidth - width - 16))}px`;
+  controls.menu.style.maxHeight = `${Math.max(above, below)}px`;
+  controls.menu.style.top = above >= below ? 'auto' : `${card.bottom + 8}px`;
+  controls.menu.style.bottom = above >= below ? `${window.innerHeight - card.top + 8}px` : 'auto';
 }
 
 /** @returns {Promise<void>} */
@@ -411,6 +441,7 @@ async function saveSettings(event) {
   if (maxTokens >= contextWindow) {
     errorNode.textContent = t('validationTokens');
     errorNode.hidden = false;
+    errorNode.scrollIntoView({ block: 'nearest' });
     return;
   }
   const button = /** @type {HTMLButtonElement} */ (element('save-settings'));
@@ -423,6 +454,7 @@ async function saveSettings(event) {
   } catch (error) {
     errorNode.textContent = errorText(error);
     errorNode.hidden = false;
+    errorNode.scrollIntoView({ block: 'nearest' });
   } finally {
     button.textContent = t('save');
     updateComposer();
@@ -449,7 +481,13 @@ function handleEvent(event) {
 
 element('new-session').addEventListener('click', newSession);
 ['workspace', 'setup-workspace', 'settings-workspace'].forEach(id => { element(id).addEventListener('click', chooseWorkspace); });
-['open-settings', 'setup-model', 'model-status'].forEach(id => { element(id).addEventListener('click', openSettings); });
+element('open-settings').addEventListener('click', () => openSettings('general'));
+['model-status', 'menu-model'].forEach(id => { element(id).addEventListener('click', () => openSettings('models')); });
+['sidebar-tools', 'tools-toggle', 'menu-tools'].forEach(id => { element(id).addEventListener('click', () => openSettings('tools')); });
+document.querySelectorAll('[data-settings-section]').forEach(node => { node.addEventListener('click', () => selectSettingsSection(/** @type {'general' | 'models' | 'tools'} */ (node.getAttribute('data-settings-section')))); });
+document.querySelectorAll('[data-theme-choice]').forEach(node => { node.addEventListener('click', () => setTheme(/** @type {'light' | 'dark'} */ (node.getAttribute('data-theme-choice')))); });
+controls.menu.addEventListener('beforetoggle', event => { if (event.newState === 'open') placeComposerMenu(); });
+window.addEventListener('resize', () => { if (controls.menu.matches(':popover-open')) placeComposerMenu(); });
 ['close-settings', 'cancel-settings'].forEach(id => { element(id).addEventListener('click', () => controls.settings.close()); });
 controls.settings.addEventListener('click', event => {
   if (event.target !== controls.settings) return;
@@ -468,20 +506,12 @@ controls.stop.addEventListener('click', async () => {
   try { await window.lah.stop(); } catch (error) { showNotice(errorText(error)); }
   finally { controls.stop.disabled = false; }
 });
-element('tools-toggle').addEventListener('click', () => {
-  const panel = element('tools-panel');
-  panel.hidden = !panel.hidden;
-  element('tools-toggle').setAttribute('aria-expanded', String(!panel.hidden));
-});
 element('theme-toggle').addEventListener('click', () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  document.documentElement.dataset.theme = theme;
-  document.body.toggleAttribute('data-ds-dark-theme', theme === 'dark');
-  element('theme-toggle').setAttribute('aria-label', t(theme === 'dark' ? 'lightTheme' : 'darkTheme'));
-  element('theme-tooltip').textContent = t(theme === 'dark' ? 'lightTheme' : 'darkTheme');
-  element('theme-icon').setAttribute('href', theme === 'dark' ? '#icon-light' : '#icon-dark');
+  setTheme(theme);
 });
 
+setTheme('dark');
 render();
 if (!window.lah) showNotice(t('bridgeUnavailable'));
 else {

@@ -180,7 +180,7 @@ app.whenReady().then(async () => {
   }
   Menu.setApplicationMenu(null)
   window = new BrowserWindow({
-    width: 1280, height: 860, minWidth: 960, minHeight: 680, title: 'LAH — Local Agent Harness', backgroundColor: '#151517', show: !smoke,
+    width: 1280, height: 820, minWidth: 960, minHeight: 680, title: 'LAH — Local Agent Harness', backgroundColor: '#151517', show: !smoke,
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#00000000', symbolColor: '#92949b', height: 40 },
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
@@ -212,27 +212,56 @@ app.whenReady().then(async () => {
       window.webContents.setBackgroundThrottling(false)
       await window.webContents.insertCSS('* { transition: none !important; }')
       window.showInactive()
+      window.focus()
+      window.webContents.focus()
+      const waitForMenuDismissal = `new Promise(resolve => {
+        const deadline = performance.now() + 1000;
+        const inspect = () => {
+          const dismissed = !document.getElementById('composer-menu').matches(':popover-open');
+          if (dismissed || performance.now() >= deadline) resolve(dismissed);
+          else setTimeout(inspect, 16);
+        };
+        inspect();
+      })`
       const review = []
-      for (const [name, theme, settingsOpen, width, height] of [
-        ['home-dark', 'dark', false, 1280, 860], ['home-light', 'light', false, 1280, 860],
-        ['settings-light', 'light', true, 1280, 860], ['settings-dark', 'dark', true, 1280, 860],
-        ['compact-dark', 'dark', false, 960, 680], ['compact-settings', 'dark', true, 960, 680],
+      for (const [name, theme, section, menuOpen, width, height] of [
+        ['home-dark', 'dark', null, false, 1280, 820], ['home-light', 'light', null, false, 1280, 820],
+        ['settings-light', 'light', 'general', false, 1280, 820], ['settings-dark', 'dark', 'general', false, 1280, 820],
+        ['models-dark', 'dark', 'models', false, 1280, 820], ['tools-dark', 'dark', 'tools', false, 1280, 820],
+        ['actions-dark', 'dark', null, true, 1280, 820],
+        ['compact-dark', 'dark', null, false, 960, 680], ['compact-settings', 'dark', 'models', false, 960, 680],
+        ['compact-actions', 'dark', null, true, 960, 680],
       ]) {
         window.setSize(width, height)
         const layout = await window.webContents.executeJavaScript(`(async () => {
           if (document.documentElement.dataset.theme !== ${JSON.stringify(theme)}) document.getElementById('theme-toggle').click();
           const dialog = document.getElementById('settings-dialog');
-          if (${settingsOpen} && !dialog.open) document.getElementById('open-settings').click();
-          if (!${settingsOpen} && dialog.open) document.getElementById('close-settings').click();
+          if (${Boolean(section)} && !dialog.open) document.getElementById('open-settings').click();
+          if (!${Boolean(section)} && dialog.open) document.getElementById('close-settings').click();
+          if (${Boolean(section)}) document.querySelector('[data-settings-section="' + ${JSON.stringify(section)} + '"]').click();
+          if (${menuOpen}) document.getElementById('composer-add').click();
           await document.fonts.ready;
           await new Promise(resolve => setTimeout(resolve, 150));
-          const elements = ['empty-state', 'composer', 'settings-dialog', 'save-settings'].map(id => {
+          const elements = ['empty-state', 'composer', 'settings-dialog', 'save-settings', 'composer-menu'].map(id => {
             const node = document.getElementById(id), rect = node.getBoundingClientRect(), style = getComputedStyle(node);
             return { id, x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height, color: style.color, background: style.backgroundColor };
           });
-          return { theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight], elements, fonts: document.fonts.check('500 42px Montserrat'), symbols: document.querySelectorAll('symbol').length, overlay: navigator.windowControlsOverlay?.visible };
+          return { theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight], elements, fonts: document.fonts.check('500 23px Montserrat'), symbols: document.querySelectorAll('symbol').length, overlay: navigator.windowControlsOverlay?.visible, menuOpen: document.getElementById('composer-menu').matches(':popover-open') };
         })()`)
         await writeFile(join(app.getPath('userData'), `${name}.png`), (await window.webContents.capturePage()).toPNG())
+        if (menuOpen) {
+          const menuRect = layout.elements.find(element => element.id === 'composer-menu')
+          if (!layout.menuOpen || menuRect.x < 0 || menuRect.y < 40 || menuRect.right > width || menuRect.bottom > height) throw new Error(`LAH action menu escapes ${name}`)
+          window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+          window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+          layout.escapeDismissed = await window.webContents.executeJavaScript(waitForMenuDismissal)
+          if (!layout.escapeDismissed) throw new Error('LAH action menu did not close on Escape')
+          await window.webContents.executeJavaScript('document.getElementById("composer-add").click()')
+          window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', x: width - 8, y: 88, clickCount: 1 })
+          window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', x: width - 8, y: 88, clickCount: 1 })
+          layout.outsideDismissed = await window.webContents.executeJavaScript(waitForMenuDismissal)
+          if (!layout.outsideDismissed) throw new Error('LAH action menu did not close on outside click')
+        }
         review.push({ name, ...layout })
       }
       await writeFile(join(app.getPath('userData'), 'design-review.json'), JSON.stringify(review, null, 2))

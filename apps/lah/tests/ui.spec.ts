@@ -29,6 +29,8 @@ function fixture(configured = false) {
   owned.push(dom)
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
   dom.window.HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+  dom.window.HTMLElement.prototype.hidePopover = function () {}
+  dom.window.HTMLElement.prototype.scrollIntoView = function () {}
   const state: UiState = {
     version: '0.0.1-prealpha',
     settings: { endpoint: 'http://127.0.0.1:1234/v1', model: configured ? 'local-model' : '', workspace: configured ? 'Z:\\project' : '', contextWindow: 8192, maxTokens: 1024 },
@@ -109,8 +111,9 @@ describe('LAH desktop renderer', () => {
   it('discovers a local model and keeps invalid token settings visible for correction', async () => {
     const app = fixture()
     await vi.waitFor(() => expect(app.dom.window.document.body.dataset.lahReady).toBe('true'))
-    app.query('open-settings').click()
+    app.query('model-status').click()
     expect(app.query<HTMLDialogElement>('settings-dialog').open).toBe(true)
+    expect(app.query('settings-models').hidden).toBe(false)
     app.query('discover-models').click()
     await vi.waitFor(() => expect(app.query<HTMLInputElement>('model-input').value).toBe('local-model'))
     expect(app.query('discovery-status').textContent).toContain('Найдено моделей: 1')
@@ -124,5 +127,25 @@ describe('LAH desktop renderer', () => {
     app.submit('settings-form')
     await vi.waitFor(() => expect(app.query<HTMLDialogElement>('settings-dialog').open).toBe(false))
     expect(app.bridge.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ model: 'local-model', maxTokens: 512 }))
+  })
+
+  it('switches settings sections without losing model edits and applies the selected appearance', async () => {
+    const app = fixture(true)
+    await vi.waitFor(() => expect(app.dom.window.document.body.dataset.lahReady).toBe('true'))
+    app.query('open-settings').click()
+    expect(app.query('settings-general').hidden).toBe(false)
+    expect(app.query('settings-footer').hidden).toBe(true)
+    app.query('settings-models-tab').click()
+    app.query<HTMLInputElement>('model-input').value = 'edited-local-model'
+    app.query('settings-general-tab').click()
+    app.dom.window.document.querySelector<HTMLButtonElement>('[data-theme-choice="light"]')?.click()
+    expect(app.dom.window.document.body.hasAttribute('data-ds-dark-theme')).toBe(false)
+    expect(app.dom.window.document.documentElement.dataset.theme).toBe('light')
+    app.query('settings-tools-tab').click()
+    expect(app.query('tools-panel').textContent).toContain('read_file')
+    app.query('settings-models-tab').click()
+    expect(app.query<HTMLInputElement>('model-input').value).toBe('edited-local-model')
+    expect(app.query('settings-footer').hidden).toBe(false)
+    expect(app.bridge.saveSettings).not.toHaveBeenCalled()
   })
 })

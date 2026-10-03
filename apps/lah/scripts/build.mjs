@@ -38,6 +38,8 @@ for (const file of ['base.css', 'design-platform.css', 'gradient-shadow-text.css
 const iconRoot = resolve(root, 'packages/client/ui-primitives/src/icons')
 const artwork = await readFile(resolve(iconRoot, 'shared-artwork.tsx'), 'utf8')
 const icons = await readFile(resolve(iconRoot, 'index.tsx'), 'utf8')
+const shieldPath = icons.match(/export const SHIELD_OUTLINE_PATH = '([^']+)'/)?.[1]
+if (!shieldPath) throw new Error('LAH: missing upstream shield artwork')
 const symbols = [
   ['new-chat', artwork, 'NewChatOutlineArtwork'], ['folder', artwork, 'FolderCloseArtwork'],
   ['browse', artwork, 'BrowseOutlineArtwork'], ['chat', artwork, 'ChatLinesOutlineArtwork'],
@@ -45,9 +47,12 @@ const symbols = [
   ['light', icons, 'IconLightOutlineArtwork'], ['dark', icons, 'IconDarkOutlineArtwork'],
   ['send', icons, 'IconSendOutlineArtwork'], ['chevron', icons, 'IconChevronDownOutlineArtwork'],
   ['close', icons, 'IconCloseOutlineArtwork'], ['stop', icons, 'IconStopFillArtwork'],
+  ['plus', icons, 'IconPlusOutlineArtwork'], ['shield', icons, 'IconShieldOutlineArtwork'],
+  ['model', icons, 'IconDatabaseOutlineArtwork'], ['agent', icons, 'IconAgentPresetOutlineArtwork'],
 ].map(([id, source, component]) => {
   const start = source.indexOf(`const ${component} =`)
   const body = start < 0 ? undefined : source.slice(start).match(/<svg\b[^>]*>([\s\S]*?)<\/svg>/)?.[1]
+    ?.replaceAll('d={SHIELD_OUTLINE_PATH}', `d="${shieldPath}"`)
   if (!body || /[{}]/.test(body)) throw new Error(`LAH: unsupported upstream icon ${component}`)
   const markup = body.replaceAll('strokeLinecap=', 'stroke-linecap=').replaceAll('strokeLinejoin=', 'stroke-linejoin=')
     .replaceAll('strokeMiterlimit=', 'stroke-miterlimit=').replaceAll('fillRule=', 'fill-rule=').replaceAll('clipRule=', 'clip-rule=')
