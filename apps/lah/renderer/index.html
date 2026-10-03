@@ -8,20 +8,21 @@
     <link rel="stylesheet" href="./style.css">
     <script type="module" src="./app.js"></script>
   </head>
-  <body>
+  <body data-ds-dark-theme>
+    <!-- LAH_ICON_SYMBOLS -->
+    <div class="window-bar"><span>Local Agent Harness</span></div>
     <div class="app-shell">
       <aside class="sidebar" data-i18n-aria="sessionsAria">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">L</div>
-          <div><div class="brand-name">LAH <span class="stage" data-i18n="stage"></span></div><div class="brand-subtitle">Local Agent Harness</div></div>
+          <div><div class="brand-name">LAH<span class="stage" data-i18n="stage"></span></div><div class="brand-subtitle">Local Agent Harness</div></div>
         </div>
-        <button class="button new-session" id="new-session" type="button"><span aria-hidden="true">＋</span><span data-i18n="newSession"></span></button>
+        <button class="button new-session" id="new-session" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-new-chat"/></svg><span data-i18n="newSession"></span></button>
         <div class="sidebar-label" data-i18n="sessions"></div>
         <nav id="session-list" class="session-list" data-i18n-aria="historyAria"></nav>
         <div class="sidebar-bottom">
           <div class="sidebar-label" data-i18n="workspace"></div>
           <button id="workspace" class="workspace-button" type="button">
-            <span class="folder-mark" aria-hidden="true"></span>
+            <svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg>
             <span class="workspace-copy"><span id="workspace-name"></span><span id="workspace-path"></span></span>
           </button>
           <div class="read-only-note"><span class="status-dot" aria-hidden="true"></span><span data-i18n="readOnly"></span></div>
@@ -30,25 +31,22 @@
       </aside>
       <main class="main">
         <header class="topbar">
-          <div class="session-heading"><span class="sidebar-label" data-i18n="sessionLabel"></span><h1 id="session-title"></h1></div>
+          <div class="session-heading"><h1 id="session-title"></h1></div>
           <div class="topbar-actions">
-            <button id="model-status" class="model-status" type="button"><span class="status-dot" aria-hidden="true"></span><span id="model-status-label"></span></button>
-            <button id="theme-toggle" class="button subtle" type="button" data-i18n="lightTheme"></button>
-            <button id="open-settings" class="button subtle" type="button" data-i18n="settings"></button>
+            <button id="model-status" class="model-status" type="button"><span class="status-dot" aria-hidden="true"></span><span id="model-status-label"></span><svg class="icon small" aria-hidden="true"><use href="#icon-chevron"/></svg></button>
+            <button id="theme-toggle" class="icon-button has-tooltip" type="button" data-i18n-aria="lightTheme"><svg class="icon" aria-hidden="true"><use id="theme-icon" href="#icon-light"/></svg><span id="theme-tooltip" class="tooltip" role="tooltip" data-i18n="lightTheme"></span></button>
+            <button id="open-settings" class="icon-button has-tooltip" type="button" data-i18n-aria="settings"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span class="tooltip" role="tooltip" data-i18n="settings"></span></button>
           </div>
         </header>
         <section class="conversation" id="conversation" data-i18n-aria="conversationAria">
           <div class="empty-state" id="empty-state">
-            <div class="empty-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
-            <div class="eyebrow" data-i18n="emptyEyebrow"></div>
+            <div class="hero-identity"><span class="hero-wordmark">LAH</span><span class="hero-stage" data-i18n="stage"></span></div>
             <h2 data-i18n="emptyTitle"></h2>
             <p class="empty-description" data-i18n="emptyDescription"></p>
             <div class="setup-steps">
-              <button class="setup-step" id="setup-workspace" type="button"><span class="step-number">1</span><span class="setup-step-copy"><span data-i18n="pickFolder"></span><span data-i18n="pickFolderDetail"></span></span><span class="step-check" id="workspace-check" aria-hidden="true"></span></button>
-              <button class="setup-step" id="setup-model" type="button"><span class="step-number">2</span><span class="setup-step-copy"><span data-i18n="connectModel"></span><span data-i18n="connectModelDetail"></span></span><span class="step-check" id="model-check" aria-hidden="true"></span></button>
+              <button class="setup-step" id="setup-workspace" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><span id="setup-workspace-label" data-i18n="pickFolder"></span><span class="step-check" id="workspace-check" aria-hidden="true"></span></button>
+              <button class="setup-step" id="setup-model" type="button"><span class="status-dot" aria-hidden="true"></span><span id="setup-model-label" data-i18n="connectModel"></span><span class="step-check" id="model-check" aria-hidden="true"></span><svg class="icon small" aria-hidden="true"><use href="#icon-chevron"/></svg></button>
             </div>
-            <div class="examples-label" data-i18n="examples"></div>
-            <div class="suggestions"><button type="button" data-suggestion="suggestionStructure"></button><button type="button" data-suggestion="suggestionSearch"></button><button type="button" data-suggestion="suggestionRead"></button></div>
           </div>
           <div id="messages" class="messages" aria-live="polite" aria-relevant="additions"></div>
           <div id="working-indicator" class="working-indicator" hidden><span class="working-dots" aria-hidden="true">···</span><span data-i18n="working"></span></div>
@@ -58,16 +56,18 @@
           <div class="notice" id="notice" role="alert" hidden></div>
           <form class="composer" id="composer">
             <textarea id="message-input" rows="2" data-i18n-placeholder="messagePlaceholder" data-i18n-aria="messageAria" maxlength="32000"></textarea>
-            <div class="composer-footer"><span id="composer-hint"></span><button id="send" class="button primary" type="submit" data-i18n="send"></button><button id="stop" class="button stop-button" type="button" data-i18n="stop" hidden></button></div>
+            <div class="composer-footer"><span class="composer-mode"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><span data-i18n="readMode"></span></span><span id="composer-hint"></span><button id="send" class="send-button has-tooltip" type="submit" data-i18n-aria="send"><svg class="icon" aria-hidden="true"><use href="#icon-send"/></svg><span class="tooltip" role="tooltip" data-i18n="send"></span></button><button id="stop" class="send-button stop-button has-tooltip" type="button" data-i18n-aria="stop" hidden><svg class="icon" aria-hidden="true"><use href="#icon-stop"/></svg><span class="tooltip" role="tooltip" data-i18n="stop"></span></button></div>
           </form>
           <div class="composer-caption"><span data-i18n="composerCaption"></span><button id="tools-toggle" class="text-button" type="button" data-i18n="availableTools"></button></div>
+          <div class="suggestions"><button type="button" data-suggestion="suggestionStructure"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><span data-suggestion-label="suggestionStructureLabel"></span></button><button type="button" data-suggestion="suggestionSearch"><svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg><span data-suggestion-label="suggestionSearchLabel"></span></button><button type="button" data-suggestion="suggestionRead"><svg class="icon" aria-hidden="true"><use href="#icon-browse"/></svg><span data-suggestion-label="suggestionReadLabel"></span></button></div>
           <div id="tools-panel" class="tools-panel" hidden></div>
         </div>
       </main>
     </div>
     <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
       <form id="settings-form" class="settings-form">
-        <header class="dialog-header"><div><div class="eyebrow" data-i18n="settingsEyebrow"></div><h2 id="settings-title" data-i18n="modelSettings"></h2></div><button id="close-settings" class="close-button" type="button" data-i18n-aria="closeSettings">×</button></header>
+        <header class="dialog-header"><div><div class="eyebrow" data-i18n="settingsEyebrow"></div><h2 id="settings-title" data-i18n="modelSettings"></h2></div><button id="close-settings" class="icon-button" type="button" data-i18n-aria="closeSettings"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button></header>
+        <div class="settings-body">
         <p class="dialog-description" data-i18n="settingsDescription"></p>
         <label class="field"><span data-i18n="endpoint"></span><input id="endpoint-input" type="url" required spellcheck="false" placeholder="http://127.0.0.1:1234/v1"><small data-i18n="endpointHelp"></small></label>
         <div class="model-field"><label class="field"><span data-i18n="modelId"></span><input id="model-input" list="models-list" spellcheck="false" data-i18n-placeholder="modelPlaceholder"><datalist id="models-list"></datalist></label><button id="discover-models" class="button" type="button" data-i18n="discoverModels"></button></div>
@@ -76,6 +76,7 @@
         <div class="settings-workspace"><div><div class="field-label" data-i18n="workspace"></div><p id="settings-workspace-path"></p></div><button id="settings-workspace" class="button" type="button" data-i18n="pickFolder"></button></div>
         <p class="settings-limit" data-i18n="settingsLimit"></p>
         <p class="form-error" id="settings-error" role="alert" hidden></p>
+        </div>
         <footer class="dialog-footer"><button id="cancel-settings" class="button" type="button" data-i18n="cancel"></button><button id="save-settings" class="button primary" type="submit" data-i18n="save"></button></footer>
       </form>
     </dialog>

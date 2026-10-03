@@ -9,7 +9,7 @@
 const ru = Object.freeze({
   stage: 'преальфа',
   newSession: 'Новый сеанс',
-  sessions: 'СЕАНСЫ',
+  sessions: 'Сеансы',
   sessionsAria: 'Сеансы',
   historyAria: 'История сеансов',
   conversationAria: 'Переписка',
@@ -17,35 +17,39 @@ const ru = Object.freeze({
   sessionLabel: 'РАБОЧИЙ СЕАНС',
   noSessions: 'Здесь появятся ваши сеансы',
   untitledSession: 'Новый сеанс',
-  workspace: 'РАБОЧАЯ ПАПКА',
+  workspace: 'Рабочая папка',
   chooseWorkspace: 'Выбрать папку',
   workspaceNotSelected: 'Папка ещё не выбрана',
-  readOnly: 'Доступ только для чтения',
+  readOnly: 'Только чтение',
   localOnly: 'На вашем компьютере',
   settings: 'Настройки',
   lightTheme: 'Светлая тема',
   darkTheme: 'Тёмная тема',
   modelNotConnected: 'Модель не настроена',
   emptyEyebrow: 'ВАШ ЛОКАЛЬНЫЙ АГЕНТ',
-  emptyTitle: 'Начните с рабочей папки',
-  emptyDescription: 'LAH помогает изучать файлы и находить нужное с помощью локальной модели. Вы выбираете папку и подключаете сервер модели на своём компьютере.',
+  emptyTitle: 'Что исследуем сегодня?',
+  emptyDescription: 'Ваш локальный агент для работы с проектами',
   pickFolder: 'Выбрать папку',
   pickFolderDetail: 'Агент сможет читать и искать только внутри неё',
-  connectModel: 'Подключить локальную модель',
+  connectModel: 'Подключить модель',
   connectModelDetail: 'LM Studio, llama.cpp или vLLM · OpenAI API',
   examples: 'Например, можно попросить',
   suggestionStructure: 'Объясни структуру этой папки',
   suggestionSearch: 'Найди, где настраивается запуск проекта',
   suggestionRead: 'Прочитай README и кратко опиши проект',
+  suggestionStructureLabel: 'Изучить проект',
+  suggestionSearchLabel: 'Найти в файлах',
+  suggestionReadLabel: 'Прочитать README',
   messagePlaceholder: 'Что найти или изучить в рабочей папке?',
-  send: 'Отправить ↗',
+  send: 'Отправить',
+  readMode: 'Чтение и поиск',
   stop: 'Остановить',
   working: 'Локальная модель обрабатывает запрос',
   hintReady: 'Enter — отправить · Shift+Enter — новая строка',
   hintWorkspace: 'Сначала выберите рабочую папку',
   hintModel: 'Укажите локальный сервер и модель в настройках',
   hintRunning: 'Можно остановить текущий запрос',
-  composerCaption: 'Преальфа · Работа с файлами без изменений',
+  composerCaption: 'Локально. Файлы остаются без изменений.',
   availableTools: 'Инструменты агента',
   toolTrace: 'Вызовы инструментов',
   toolPending: 'Выполняется',
@@ -132,7 +136,8 @@ document.querySelectorAll('[data-i18n-placeholder]').forEach(node => { node.setA
 document.querySelectorAll('[data-i18n-aria]').forEach(node => { node.setAttribute('aria-label', t(node.getAttribute('data-i18n-aria'))); });
 document.querySelectorAll('[data-suggestion]').forEach(node => {
   const suggestion = t(node.getAttribute('data-suggestion'));
-  node.textContent = suggestion;
+  const label = node.querySelector('[data-suggestion-label]');
+  if (label) label.textContent = t(label.getAttribute('data-suggestion-label'));
   node.addEventListener('click', () => { controls.input.value = suggestion; updateComposer(); controls.input.focus(); });
 });
 
@@ -186,8 +191,17 @@ function renderSessions() {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = `session-row${session.id === currentSessionId ? ' active' : ''}`;
-    row.textContent = session.title || t('untitledSession');
-    row.title = row.textContent;
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('class', 'icon');
+    icon.setAttribute('aria-hidden', 'true');
+    const glyph = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    glyph.setAttribute('href', '#icon-chat');
+    icon.append(glyph);
+    const title = document.createElement('span');
+    title.className = 'session-row-label';
+    title.textContent = session.title || t('untitledSession');
+    row.append(icon, title);
+    row.title = title.textContent;
     row.disabled = running;
     if (session.id === currentSessionId) row.setAttribute('aria-current', 'page');
     row.addEventListener('click', () => { currentSessionId = session.id; pendingMessage = ''; showNotice(''); render(); });
@@ -215,6 +229,7 @@ function renderMessages() {
   controls.messages.replaceChildren(...messages.map(renderMessage));
   if (pendingMessage) controls.messages.append(renderMessage({ role: 'user', content: pendingMessage }));
   controls.empty.hidden = messages.length > 0 || Boolean(pendingMessage);
+  document.body.classList.toggle('has-conversation', controls.empty.hidden);
 }
 
 /** @returns {void} */
@@ -281,6 +296,10 @@ function render() {
   element('settings-workspace-path').textContent = workspace || t('workspaceNotSelected');
   element('workspace-check').textContent = workspace ? '✓' : '';
   element('model-check').textContent = state.settings.model ? '✓' : '';
+  element('setup-workspace-label').textContent = workspace ? controls.workspaceName.textContent : t('chooseWorkspace');
+  element('setup-model-label').textContent = state.settings.model || t('connectModel');
+  element('setup-workspace').classList.toggle('complete', Boolean(workspace));
+  element('setup-model').classList.toggle('complete', Boolean(state.settings.model));
   element('model-status-label').textContent = state.settings.model || t('modelNotConnected');
   element('model-status').classList.toggle('ready', Boolean(state.settings.model));
   element('version').textContent = state.version;
@@ -457,7 +476,10 @@ element('tools-toggle').addEventListener('click', () => {
 element('theme-toggle').addEventListener('click', () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = theme;
-  element('theme-toggle').textContent = t(theme === 'dark' ? 'lightTheme' : 'darkTheme');
+  document.body.toggleAttribute('data-ds-dark-theme', theme === 'dark');
+  element('theme-toggle').setAttribute('aria-label', t(theme === 'dark' ? 'lightTheme' : 'darkTheme'));
+  element('theme-tooltip').textContent = t(theme === 'dark' ? 'lightTheme' : 'darkTheme');
+  element('theme-icon').setAttribute('href', theme === 'dark' ? '#icon-light' : '#icon-dark');
 });
 
 render();

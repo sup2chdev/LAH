@@ -41,7 +41,8 @@ let child
 try {
   const address = server.address()
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
-  child = spawn(require('electron'), [resolve(appRoot, 'dist'), '--lah-smoke', `--lah-data=${userData}`, `--lah-e2e-url=http://127.0.0.1:${address.port}/v1`, `--lah-e2e-workspace=${workspace}`], { windowsHide: true, stdio: 'pipe', env })
+  const designReview = process.argv.includes('--lah-design-review')
+  child = spawn(require('electron'), [resolve(appRoot, 'dist'), '--lah-smoke', ...(designReview ? ['--lah-design-review'] : []), `--lah-data=${userData}`, `--lah-e2e-url=http://127.0.0.1:${address.port}/v1`, `--lah-e2e-workspace=${workspace}`], { windowsHide: true, stdio: 'pipe', env })
   let diagnostics = ''
   child.stdout.on('data', chunk => { diagnostics += chunk.toString() })
   child.stderr.on('data', chunk => { diagnostics += chunk.toString() })
@@ -62,7 +63,7 @@ try {
   const persisted = JSON.parse(await readFile(join(userData, 'lah-state.json'), 'utf8'))
   assert.ok(persisted.sessions[0].events.some(event => event.type === 'tool/result'))
   await writeFile(join(outputRoot, 'desktop-e2e-result.json'), JSON.stringify({ result: 'PASS', modelCalls, title: result.title, tools: result.state.tools.map(tool => tool.name) }, null, 2))
-  await writeFile(join(outputRoot, 'desktop-e2e.png'), await readFile(join(userData, 'desktop.png')))
+  await writeFile(join(outputRoot, 'desktop-e2e.png'), await readFile(join(userData, designReview ? 'home-dark.png' : 'desktop.png')))
   console.log('LAH_DESKTOP_E2E_PASS: own window, settings, discovery, tool execution, history; no model installed.')
 } finally {
   if (child && child.exitCode === null) { child.kill(); await new Promise(resolve => child.once('exit', resolve)) }

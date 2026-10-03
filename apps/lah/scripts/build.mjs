@@ -28,6 +28,34 @@ await build({
 await cp(resolve(appRoot, 'main.cjs'), resolve(appRoot, 'dist/main.cjs'))
 await cp(resolve(appRoot, 'preload.cjs'), resolve(appRoot, 'dist/preload.cjs'))
 await cp(resolve(appRoot, 'renderer'), resolve(appRoot, 'dist/renderer'), { recursive: true })
+// The standalone carrier consumes the fork's theme assets and existing icon geometry.
+const themeRoot = resolve(root, 'packages/client/ui-theme/src/styles')
+await mkdir(resolve(appRoot, 'dist/renderer/theme'), { recursive: true })
+for (const file of ['base.css', 'design-platform.css', 'gradient-shadow-text.css', 'corner-shape.css', 'brand-font.css',
+  'montserrat-regular.woff2', 'montserrat-medium.woff2', 'montserrat-light.woff2', 'Montserrat-OFL.txt']) {
+  await cp(resolve(themeRoot, file), resolve(appRoot, 'dist/renderer/theme', file))
+}
+const iconRoot = resolve(root, 'packages/client/ui-primitives/src/icons')
+const artwork = await readFile(resolve(iconRoot, 'shared-artwork.tsx'), 'utf8')
+const icons = await readFile(resolve(iconRoot, 'index.tsx'), 'utf8')
+const symbols = [
+  ['new-chat', artwork, 'NewChatOutlineArtwork'], ['folder', artwork, 'FolderCloseArtwork'],
+  ['browse', artwork, 'BrowseOutlineArtwork'], ['chat', artwork, 'ChatLinesOutlineArtwork'],
+  ['search', icons, 'IconSearchOutlineArtwork'], ['settings', icons, 'IconSettingsOutlineArtwork'],
+  ['light', icons, 'IconLightOutlineArtwork'], ['dark', icons, 'IconDarkOutlineArtwork'],
+  ['send', icons, 'IconSendOutlineArtwork'], ['chevron', icons, 'IconChevronDownOutlineArtwork'],
+  ['close', icons, 'IconCloseOutlineArtwork'], ['stop', icons, 'IconStopFillArtwork'],
+].map(([id, source, component]) => {
+  const start = source.indexOf(`const ${component} =`)
+  const body = start < 0 ? undefined : source.slice(start).match(/<svg\b[^>]*>([\s\S]*?)<\/svg>/)?.[1]
+  if (!body || /[{}]/.test(body)) throw new Error(`LAH: unsupported upstream icon ${component}`)
+  const markup = body.replaceAll('strokeLinecap=', 'stroke-linecap=').replaceAll('strokeLinejoin=', 'stroke-linejoin=')
+    .replaceAll('strokeMiterlimit=', 'stroke-miterlimit=').replaceAll('fillRule=', 'fill-rule=').replaceAll('clipRule=', 'clip-rule=')
+  return `<symbol id="icon-${id}" viewBox="0 0 16 16" fill="none" stroke-width="1.2">${markup}</symbol>`
+}).join('\n')
+const page = await readFile(resolve(appRoot, 'renderer/index.html'), 'utf8')
+await writeFile(resolve(appRoot, 'dist/renderer/index.html'), page.replace('<!-- LAH_ICON_SYMBOLS -->',
+  `<svg xmlns="http://www.w3.org/2000/svg" class="icon-definitions" aria-hidden="true"><defs>${symbols}</defs></svg>`))
 await writeFile(resolve(appRoot, 'dist/package.json'), JSON.stringify({
   name: 'lah', productName: 'LAH', version: manifest.version, main: 'main.cjs', description: manifest.description,
 }, null, 2) + '\n')
