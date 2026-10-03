@@ -10,12 +10,12 @@
   </head>
   <body data-ds-dark-theme>
     <!-- LAH_ICON_SYMBOLS -->
-    <div class="window-bar"><span>Local Agent Harness</span></div>
+    <div class="window-bar"><button id="toggle-sidebar" class="icon-button window-control has-tooltip" type="button" aria-controls="sidebar" aria-expanded="true" data-i18n-aria="hideSidebar"><svg class="icon" aria-hidden="true"><use href="#icon-sidebar"/></svg><span id="sidebar-tooltip" class="tooltip" role="tooltip" data-i18n="hideSidebar"></span></button><span class="window-title">Local Agent Harness</span></div>
     <div class="app-shell">
-      <aside class="sidebar" data-i18n-aria="sessionsAria">
-        <div class="brand"><span class="brand-name">LAH</span><span class="brand-tag">LOCAL AGENT HARNESS</span></div>
+      <aside class="sidebar" id="sidebar" data-i18n-aria="sessionsAria">
+        <div class="brand"><svg class="brand-mark" aria-hidden="true"><use href="#lah-mark"/></svg><div class="brand-copy"><span class="brand-name">LAH</span><span class="brand-subtitle">Local Agent Harness</span></div></div>
         <button class="button new-session" id="new-session" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-new-chat"/></svg><span data-i18n="newSession"></span></button>
-        <button class="sidebar-action" id="sidebar-tools" type="button" aria-haspopup="dialog"><svg class="icon" aria-hidden="true"><use href="#icon-browse"/></svg><span data-i18n="availableTools"></span></button>
+        <button class="sidebar-action" id="sidebar-tools" type="button" aria-haspopup="dialog"><svg class="icon" aria-hidden="true"><use href="#icon-browse"/></svg><span data-i18n="toolsSettings"></span></button>
         <div class="sidebar-label" data-i18n="workspace"></div>
         <button id="workspace" class="workspace-button" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><span class="workspace-copy"><span id="workspace-name"></span><span id="workspace-path"></span></span></button>
         <nav id="session-list" class="session-list" data-i18n-aria="historyAria"></nav>
@@ -31,7 +31,7 @@
         </header>
         <section class="conversation" id="conversation" data-i18n-aria="conversationAria">
           <div class="empty-state" id="empty-state">
-            <div class="hero-identity"><svg class="hero-icon" aria-hidden="true"><use href="#icon-agent"/></svg><h2 data-i18n="emptyTitle"></h2><span class="hero-stage" data-i18n="stage"></span></div>
+            <div class="hero-identity"><svg class="hero-icon" aria-hidden="true"><use href="#lah-mark"/></svg><h2 data-i18n="emptyTitle"></h2><span class="hero-stage" data-i18n="stage"></span></div>
             <div class="setup-steps">
               <button class="setup-step" id="setup-workspace" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><span id="setup-workspace-label" data-i18n="pickFolder"></span><svg class="icon small" aria-hidden="true"><use href="#icon-chevron"/></svg></button>
               <span class="setup-mode"><svg class="icon" aria-hidden="true"><use href="#icon-agent"/></svg><span data-i18n="localMode"></span></span>
@@ -53,17 +53,17 @@
               <button id="stop" class="send-button has-tooltip" type="button" data-i18n-aria="stop" hidden><svg class="icon" aria-hidden="true"><use href="#icon-stop"/></svg><span class="tooltip" role="tooltip" data-i18n="stop"></span></button>
             </div>
           </form>
-          <div class="composer-caption"><span id="composer-hint" aria-live="polite"></span><button id="tools-toggle" class="text-button" type="button" aria-haspopup="dialog" data-i18n="availableTools"></button></div>
+          <div class="composer-caption"><span id="composer-hint" aria-live="polite"></span></div>
         </div>
       </main>
     </div>
     <div id="composer-menu" class="composer-menu" popover="auto" data-i18n-aria="quickActions">
       <div class="menu-label" data-i18n="quickActions"></div>
-      <button type="button" data-suggestion="suggestionStructure"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><span data-suggestion-label="suggestionStructureLabel"></span></button>
-      <button type="button" data-suggestion="suggestionSearch"><svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg><span data-suggestion-label="suggestionSearchLabel"></span></button>
-      <button type="button" data-suggestion="suggestionRead"><svg class="icon" aria-hidden="true"><use href="#icon-browse"/></svg><span data-suggestion-label="suggestionReadLabel"></span></button>
+      <button type="button" data-suggestion="suggestionStructure"><svg class="icon" aria-hidden="true"><use href="#icon-folder"/></svg><span data-suggestion-label="suggestionStructureLabel"></span><span class="menu-detail" data-i18n="suggestionStructure"></span></button>
+      <button type="button" data-suggestion="suggestionSearch"><svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg><span data-suggestion-label="suggestionSearchLabel"></span><span class="menu-detail" data-i18n="suggestionSearch"></span></button>
+      <button type="button" data-suggestion="suggestionRead"><svg class="icon" aria-hidden="true"><use href="#icon-browse"/></svg><span data-suggestion-label="suggestionReadLabel"></span><span class="menu-detail" data-i18n="suggestionRead"></span></button>
       <div class="menu-label" data-i18n="settings"></div>
-      <button id="menu-model" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-model"/></svg><span data-i18n="modelSettings"></span></button>
+      <button id="menu-model" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-model"/></svg><span data-i18n="modelSettings"></span><kbd class="menu-shortcut">Ctrl+,</kbd></button>
       <button id="menu-tools" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-browse"/></svg><span data-i18n="availableTools"></span></button>
     </div>
     <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">

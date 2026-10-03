@@ -7,6 +7,7 @@ const { randomUUID } = require('node:crypto')
 const { createLahKernel } = require('./kernel.cjs')
 
 app.setName('LAH')
+if (process.platform === 'win32') app.setAppUserModelId('LocalAgentHarness.LAH')
 // The desktop UI leaves scarce GPU memory available to the separate local model server.
 app.disableHardwareAcceleration()
 const dataArgument = process.argv.find(value => value.startsWith('--lah-data='))
@@ -181,6 +182,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)
   window = new BrowserWindow({
     width: 1280, height: 820, minWidth: 960, minHeight: 680, title: 'LAH — Local Agent Harness', backgroundColor: '#151517', show: !smoke,
+    icon: join(__dirname, 'renderer/brand/lah-icon.png'),
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#00000000', symbolColor: '#92949b', height: 40 },
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
@@ -224,16 +226,18 @@ app.whenReady().then(async () => {
         inspect();
       })`
       const review = []
-      for (const [name, theme, section, menuOpen, width, height] of [
+      for (const [name, theme, section, menuOpen, width, height, sidebarCollapsed = false] of [
         ['home-dark', 'dark', null, false, 1280, 820], ['home-light', 'light', null, false, 1280, 820],
         ['settings-light', 'light', 'general', false, 1280, 820], ['settings-dark', 'dark', 'general', false, 1280, 820],
         ['models-dark', 'dark', 'models', false, 1280, 820], ['tools-dark', 'dark', 'tools', false, 1280, 820],
         ['actions-dark', 'dark', null, true, 1280, 820],
+        ['sidebar-hidden', 'dark', null, false, 1280, 820, true],
         ['compact-dark', 'dark', null, false, 960, 680], ['compact-settings', 'dark', 'models', false, 960, 680],
         ['compact-actions', 'dark', null, true, 960, 680],
       ]) {
         window.setSize(width, height)
         const layout = await window.webContents.executeJavaScript(`(async () => {
+          if (document.getElementById('sidebar').hidden !== ${sidebarCollapsed}) document.getElementById('toggle-sidebar').click();
           if (document.documentElement.dataset.theme !== ${JSON.stringify(theme)}) document.getElementById('theme-toggle').click();
           const dialog = document.getElementById('settings-dialog');
           if (${Boolean(section)} && !dialog.open) document.getElementById('open-settings').click();
@@ -246,7 +250,7 @@ app.whenReady().then(async () => {
             const node = document.getElementById(id), rect = node.getBoundingClientRect(), style = getComputedStyle(node);
             return { id, x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height, color: style.color, background: style.backgroundColor };
           });
-          return { theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight], elements, fonts: document.fonts.check('500 23px Montserrat'), symbols: document.querySelectorAll('symbol').length, overlay: navigator.windowControlsOverlay?.visible, menuOpen: document.getElementById('composer-menu').matches(':popover-open') };
+          return { theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight], elements, fonts: document.fonts.check('500 23px Montserrat'), symbols: document.querySelectorAll('symbol').length, overlay: navigator.windowControlsOverlay?.visible, menuOpen: document.getElementById('composer-menu').matches(':popover-open'), sidebarCollapsed: document.getElementById('sidebar').hidden };
         })()`)
         await writeFile(join(app.getPath('userData'), `${name}.png`), (await window.webContents.capturePage()).toPNG())
         if (menuOpen) {
@@ -264,6 +268,19 @@ app.whenReady().then(async () => {
         }
         review.push({ name, ...layout })
       }
+      await window.webContents.executeJavaScript(`document.getElementById('theme-toggle').click(); document.getElementById('toggle-sidebar').click();`)
+      const loaded = new Promise(resolve => window.webContents.once('did-finish-load', resolve))
+      window.webContents.reload()
+      await loaded
+      const restored = await window.webContents.executeJavaScript(`new Promise(resolve => {
+        const inspect = () => {
+          if (!document.querySelector('[data-lah-ready]')) { setTimeout(inspect, 16); return; }
+          resolve({ name: 'preferences-restored', theme: document.documentElement.dataset.theme, sidebarCollapsed: document.getElementById('sidebar').hidden });
+        };
+        inspect();
+      })`)
+      if (restored.theme !== 'light' || !restored.sidebarCollapsed) throw new Error('LAH appearance preferences did not survive reload')
+      review.push(restored)
       await writeFile(join(app.getPath('userData'), 'design-review.json'), JSON.stringify(review, null, 2))
     }
     console.log(`LAH_SMOKE_OK ${output}`)

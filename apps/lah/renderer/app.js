@@ -22,6 +22,8 @@ const ru = Object.freeze({
   readOnly: 'Только чтение',
   localOnly: 'На вашем компьютере',
   settings: 'Настройки',
+  hideSidebar: 'Скрыть боковую панель · Ctrl+B',
+  showSidebar: 'Показать боковую панель · Ctrl+B',
   lightTheme: 'Светлая тема',
   darkTheme: 'Тёмная тема',
   modelNotConnected: 'Модель не настроена',
@@ -59,9 +61,9 @@ const ru = Object.freeze({
   appearance: 'Оформление',
   accessMode: 'Режим доступа',
   readOnlyHelp: 'Чтение и поиск внутри выбранной папки',
-  themeHelp: 'В преальфе выбранная тема действует до закрытия окна.',
+  themeHelp: 'Тема и положение боковой панели сохраняются на этом компьютере.',
   toolsHelp: 'Эти инструменты доступны агенту для чтения и поиска в рабочей папке.',
-  settingsDescription: 'Запустите модель в своём локальном сервере, затем укажите его адрес и ID модели. LAH не загружает модели и не требует аккаунта или API-ключа.',
+  settingsDescription: 'Подключите модель, уже запущенную в LM Studio, llama.cpp или другом локальном сервере.',
   endpoint: 'Адрес OpenAI-совместимого сервера',
   endpointHelp: 'URL с /v1. Пример для LM Studio: http://127.0.0.1:1234/v1',
   modelId: 'ID модели',
@@ -297,6 +299,7 @@ function render() {
   element('settings-workspace-path').textContent = workspace || t('workspaceNotSelected');
   element('setup-workspace-label').textContent = workspace ? controls.workspaceName.textContent : t('chooseWorkspace');
   element('model-status-label').textContent = state.settings.model || t('modelNotConnected');
+  element('model-status').title = state.settings.model || t('modelSettings');
   element('version').textContent = state.version;
   updateComposer();
 }
@@ -322,24 +325,52 @@ function selectSettingsSection(section) {
 
 /** @param {'general' | 'models' | 'tools'} [section] @returns {void} */
 function openSettings(section = 'general') {
-  controls.endpoint.value = state.settings.endpoint;
-  controls.model.value = state.settings.model;
-  controls.context.value = String(state.settings.contextWindow);
-  controls.maxTokens.value = String(state.settings.maxTokens);
-  element('discovery-status').textContent = '';
-  element('settings-error').hidden = true;
+  if (!controls.settings.open) {
+    controls.endpoint.value = state.settings.endpoint;
+    controls.model.value = state.settings.model;
+    controls.context.value = String(state.settings.contextWindow);
+    controls.maxTokens.value = String(state.settings.maxTokens);
+    element('discovery-status').textContent = '';
+    element('settings-error').hidden = true;
+  }
   selectSettingsSection(section);
   if (!controls.settings.open) controls.settings.showModal();
 }
 
-/** @param {'light' | 'dark'} theme @returns {void} */
-function setTheme(theme) {
+/** @param {string} key @returns {string | null} */
+function readPreference(key) {
+  try { return localStorage.getItem(key); }
+  catch (error) { console.debug('LAH appearance preferences are unavailable', error); return null; }
+}
+
+/** Appearance storage is optional; its failure does not block model or file access. @param {string} key @param {string} value @returns {void} */
+function writePreference(key, value) {
+  try { localStorage.setItem(key, value); }
+  catch (error) { console.debug('LAH appearance preference was not saved', error); }
+}
+
+/** @param {'light' | 'dark'} theme @param {boolean} [remember] @returns {void} */
+function setTheme(theme, remember = true) {
   document.documentElement.dataset.theme = theme;
   document.body.toggleAttribute('data-ds-dark-theme', theme === 'dark');
   element('theme-toggle').setAttribute('aria-label', t(theme === 'dark' ? 'lightTheme' : 'darkTheme'));
   element('theme-tooltip').textContent = t(theme === 'dark' ? 'lightTheme' : 'darkTheme');
   element('theme-icon').setAttribute('href', theme === 'dark' ? '#icon-light' : '#icon-dark');
   document.querySelectorAll('[data-theme-choice]').forEach(node => { node.setAttribute('aria-pressed', String(node.getAttribute('data-theme-choice') === theme)); });
+  if (remember) writePreference('lah.theme', theme);
+}
+
+/** @param {boolean} collapsed @param {boolean} [remember] @returns {void} */
+function setSidebarCollapsed(collapsed, remember = true) {
+  const sidebar = element('sidebar');
+  const toggle = element('toggle-sidebar');
+  if (collapsed && sidebar.contains(document.activeElement)) toggle.focus();
+  sidebar.hidden = collapsed;
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  toggle.setAttribute('aria-label', t(collapsed ? 'showSidebar' : 'hideSidebar'));
+  element('sidebar-tooltip').textContent = t(collapsed ? 'showSidebar' : 'hideSidebar');
+  if (remember) writePreference('lah.sidebar', collapsed ? 'hidden' : 'visible');
 }
 
 /** Fit the action menu above or below the input card without clipping it at a window edge. @returns {void} */
@@ -370,6 +401,9 @@ async function newSession() {
     const result = await window.lah.newSession();
     currentSessionId = result.sessionId;
     pendingMessage = '';
+    controls.input.value = '';
+    controls.input.style.height = '';
+    controls.menu.hidePopover();
     showNotice('');
     receiveState(await window.lah.getState());
     controls.input.focus();
@@ -483,7 +517,7 @@ element('new-session').addEventListener('click', newSession);
 ['workspace', 'setup-workspace', 'settings-workspace'].forEach(id => { element(id).addEventListener('click', chooseWorkspace); });
 element('open-settings').addEventListener('click', () => openSettings('general'));
 ['model-status', 'menu-model'].forEach(id => { element(id).addEventListener('click', () => openSettings('models')); });
-['sidebar-tools', 'tools-toggle', 'menu-tools'].forEach(id => { element(id).addEventListener('click', () => openSettings('tools')); });
+['sidebar-tools', 'menu-tools'].forEach(id => { element(id).addEventListener('click', () => openSettings('tools')); });
 document.querySelectorAll('[data-settings-section]').forEach(node => { node.addEventListener('click', () => selectSettingsSection(/** @type {'general' | 'models' | 'tools'} */ (node.getAttribute('data-settings-section')))); });
 document.querySelectorAll('[data-theme-choice]').forEach(node => { node.addEventListener('click', () => setTheme(/** @type {'light' | 'dark'} */ (node.getAttribute('data-theme-choice')))); });
 controls.menu.addEventListener('beforetoggle', event => { if (event.newState === 'open') placeComposerMenu(); });
@@ -510,8 +544,18 @@ element('theme-toggle').addEventListener('click', () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   setTheme(theme);
 });
+element('toggle-sidebar').addEventListener('click', () => { controls.menu.hidePopover(); setSidebarCollapsed(!element('sidebar').hidden); });
+document.addEventListener('keydown', event => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.repeat || event.isComposing) return;
+  const key = event.key.toLowerCase();
+  if (key === ',') { event.preventDefault(); openSettings('models'); }
+  else if (!controls.settings.open && key === 'b') { event.preventDefault(); element('toggle-sidebar').click(); }
+  else if (!controls.settings.open && key === 'n' && bridgeReady && !running) { event.preventDefault(); void newSession(); }
+});
 
-setTheme('dark');
+element('new-session').title = t('newSession') + ' · Ctrl+N';
+setTheme(readPreference('lah.theme') === 'light' ? 'light' : 'dark', false);
+setSidebarCollapsed(readPreference('lah.sidebar') === 'hidden', false);
 render();
 if (!window.lah) showNotice(t('bridgeUnavailable'));
 else {

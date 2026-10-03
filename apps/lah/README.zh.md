@@ -12,7 +12,9 @@ LAH 是此 fork 中独立的 Electron 应用。它提供窗口、隔离的 prelo
 
 构建过程在打包后的 attribution 辅助模块中使用应用自身的公开身份。软件包许可证和上游声明随应用分发。渲染器无法访问 Node；所有文件和模型操作都通过固定的 preload API 执行，并检查调用者是否为主 frame。网络连接发生在主进程中，只访问配置的 loopback 服务器。Chromium 硬件加速已禁用，以便将 GPU 资源留给模型服务器。
 
-渲染器使用此 fork 的[主题样式和 Montserrat 资源](../../packages/client/ui-theme/src/styles/)以及[现有图标](../../packages/client/ui-primitives/src/icons/)。构建过程原样复制主题文件，并提取固定的一组静态 SVG 图标；不支持的图标定义会使构建失败。深色和浅色主题共用这些资源。空聊天中紧凑的输入框居中，包含工作区和模型控件；有消息时，聊天内容在输入框上方滚动。输入框菜单提供建议提示词和设置快捷入口，按 Escape 或点击菜单外部即可关闭。设置分为常规、模型和工具三个部分，标题固定，内容可滚动；模型字段的修改在切换部分时保留，直到保存或关闭对话框。外观设置在当前窗口生命周期内生效。Windows 原生窗口按钮位于应用可拖动的标题栏上方。
+渲染器使用此 fork 的[主题样式和 Montserrat 资源](../../packages/client/ui-theme/src/styles/)以及[现有图标](../../packages/client/ui-primitives/src/icons/)。构建过程原样复制主题文件，并提取固定的一组静态 SVG 图标；不支持的图标定义会使构建失败。深色和浅色主题共用这些资源。LAH 自有的[折叠轨道标志](renderer/brand/lah-mark.svg)由四个填充的矢量路径组成。在仓库根目录运行 `node apps/lah/scripts/render-brand.mjs`，可利用 desktop 工作区已有的 Sharp 依赖重新生成 PNG 窗口图标。
+
+空聊天中紧凑的输入框居中，包含工作区和模型控件；有消息时，聊天内容在输入框上方滚动。输入框菜单提供建议提示词和设置快捷入口，按 Escape 或点击菜单外部即可关闭。设置分为常规、模型和工具三个部分，标题固定，内容可滚动；模型字段的修改在切换部分时保留，直到保存或关闭对话框。主题和侧边栏显示状态保存在渲染器的本地存储中。`Ctrl+B` 切换侧边栏，`Ctrl+,` 打开模型设置，`Ctrl+N` 在没有活动任务或设置对话框时新建空白聊天。Windows 原生窗口按钮位于应用可拖动的标题栏上方。
 
 ## 状态与执行
 
@@ -22,6 +24,6 @@ LAH 是此 fork 中独立的 Electron 应用。它提供窗口、隔离的 prelo
 
 ## 验证与限制
 
-`pnpm test:lah` 验证真实的有界工作区读取、本地 SSE（Server-Sent Events）解析、schema 拒绝、取消，以及构建后 kernel 的双工具 agent loop 和原始日志续接。[记录的 transcript（文本记录）](tests/expected/read-only-transcript.json) 固定无需密钥的会话驱动结果。真实模型仅由 mock loopback HTTP 服务器替代。隔离的 UI 测试验证配置、安全呈现、请求状态、设置部分切换和外观选择。Electron 的 `--lah-smoke` 模式在隐藏窗口中启动实际隔离页面，将初始状态和截图写入显式选择的 `--lah-data` 目录，然后退出。添加 `--lah-design-review` 会短暂显示隔离的测试窗口并让其获得焦点，在禁用过渡效果的情况下截取两种主题、每个设置部分、输入框菜单和最小窗口尺寸，并通过原生键盘和鼠标事件验证菜单关闭。
+`pnpm test:lah` 验证真实的有界工作区读取、本地 SSE（Server-Sent Events）解析、schema 拒绝、取消，以及构建后 kernel 的双工具 agent loop 和原始日志续接。[记录的 transcript（文本记录）](tests/expected/read-only-transcript.json) 固定无需密钥的会话驱动结果。真实模型仅由 mock loopback HTTP 服务器替代。隔离的 UI 测试验证配置、安全呈现、请求状态、设置草稿、键盘快捷键和已保存的外观偏好。Electron 的 `--lah-smoke` 模式在隐藏窗口中启动实际隔离页面，将初始状态和截图写入显式选择的 `--lah-data` 目录，然后退出。添加 `--lah-design-review` 会短暂显示隔离的测试窗口并让其获得焦点，在禁用过渡效果的情况下截取两种主题、每个设置部分、输入框菜单、收起的侧边栏和最小窗口尺寸，通过原生键盘和鼠标事件验证菜单关闭，并验证页面重新加载后的外观恢复。
 
 预览版不包含模型、不执行训练、不测量模型质量，也不连接 SubLLM。每个实际服务器、模型和模板的原生 tool calling 兼容性仍需现场验证。应用不提供自动上下文压缩、准确 tokenizer、流式 token 显示或完整上下文成本面板。可展开的工具面板显示当前窗口生命周期内观察到的调用；原始持久化调用仍保留在会话日志中。文件访问在进程内受限，不能替代防御并发文件系统替换的操作系统沙箱。这些限制定义第一阶段的范围，并非从上游产品推断出的保证。

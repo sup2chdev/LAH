@@ -49,6 +49,7 @@ const symbols = [
   ['close', icons, 'IconCloseOutlineArtwork'], ['stop', icons, 'IconStopFillArtwork'],
   ['plus', icons, 'IconPlusOutlineArtwork'], ['shield', icons, 'IconShieldOutlineArtwork'],
   ['model', icons, 'IconDatabaseOutlineArtwork'], ['agent', icons, 'IconAgentPresetOutlineArtwork'],
+  ['sidebar', icons, 'IconPanelLeftOutlineArtwork'],
 ].map(([id, source, component]) => {
   const start = source.indexOf(`const ${component} =`)
   const body = start < 0 ? undefined : source.slice(start).match(/<svg\b[^>]*>([\s\S]*?)<\/svg>/)?.[1]
@@ -58,9 +59,13 @@ const symbols = [
     .replaceAll('strokeMiterlimit=', 'stroke-miterlimit=').replaceAll('fillRule=', 'fill-rule=').replaceAll('clipRule=', 'clip-rule=')
   return `<symbol id="icon-${id}" viewBox="0 0 16 16" fill="none" stroke-width="1.2">${markup}</symbol>`
 }).join('\n')
+const brand = await readFile(resolve(appRoot, 'renderer/brand/lah-mark.svg'), 'utf8')
+const brandBody = brand.match(/<svg\b[^>]*>([\s\S]*?)<\/svg>/)?.[1]?.replace(/<title>[\s\S]*?<\/title>/, '')
+if (!brandBody) throw new Error('LAH: missing brand artwork')
+const brandSymbol = `<symbol id="lah-mark" viewBox="0 0 32 32" fill="none">${brandBody}</symbol>`
 const page = await readFile(resolve(appRoot, 'renderer/index.html'), 'utf8')
 await writeFile(resolve(appRoot, 'dist/renderer/index.html'), page.replace('<!-- LAH_ICON_SYMBOLS -->',
-  `<svg xmlns="http://www.w3.org/2000/svg" class="icon-definitions" aria-hidden="true"><defs>${symbols}</defs></svg>`))
+  `<svg xmlns="http://www.w3.org/2000/svg" class="icon-definitions" aria-hidden="true"><defs>${symbols}${brandSymbol}</defs></svg>`))
 await writeFile(resolve(appRoot, 'dist/package.json'), JSON.stringify({
   name: 'lah', productName: 'LAH', version: manifest.version, main: 'main.cjs', description: manifest.description,
 }, null, 2) + '\n')
